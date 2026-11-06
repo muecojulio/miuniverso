@@ -1,0 +1,111 @@
+@import "tailwindcss";
+@import "@fontsource/outfit/latin-400.css";
+@import "@fontsource/outfit/latin-500.css";
+@import "@fontsource/outfit/latin-600.css";
+@import "@fontsource/fraunces/latin-500.css";
+@import "@fontsource/fraunces/latin-600.css";
+
+@theme {
+  --color-ink: #100e0c;
+  --color-panel: #1b1815;
+  --color-panel-2: #26221d;
+  --color-paper: #f4f0e6;
+  --color-muted: #a39c90;
+  --color-brass: #e0b15a;
+  --color-line: #34302a;
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --radius-card: 1.25rem;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  html {
+    background: var(--color-ink);
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    line-height: 1.15;
+  }
+
+  ::selection {
+    background: var(--color-brass);
+    color: var(--color-ink);
+  }
+}
+
+@layer components {
+  .field {
+    width: 100%;
+    min-height: 2.75rem;
+    border-radius: 0.9rem;
+    border: 1px solid var(--color-line);
+    background: var(--color-panel-2);
+    color: var(--color-paper);
+    padding: 0.7rem 0.9rem;
+    outline: none;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .field:focus {
+    border-color: var(--color-brass);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brass) 28%, transparent);
+  }
+
+  .field::placeholder {
+    color: var(--color-muted);
+  }
+
+  .page-pad {
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+
+  .nav-pad {
+    padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
+  }
+
+  .stagger-item {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
+    animation: fade-in-up 420ms ease-out forwards;
+  }
+
+  .stagger-item:nth-child(1) { animation-delay: 0ms; }
+  .stagger-item:nth-child(2) { animation-delay: 80ms; }
+  .stagger-item:nth-child(3) { animation-delay: 160ms; }
+  .stagger-item:nth-child(4) { animation-delay: 240ms; }
+  .stagger-item:nth-child(5) { animation-delay: 320ms; }
+}
+
+@keyframes fade-in-up {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-item {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
