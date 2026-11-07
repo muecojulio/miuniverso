@@ -18,7 +18,10 @@ function Privacidad() {
           El botón «Guardar video» crea el archivo en el propio teléfono. Nadie más lo recibe.
         </p>
         <p>
-          «Retrato con Grok» y «Toma con Grok» son opcionales. Solo si activas el interruptor y pulsas el botón, esa foto y el texto de la historia se envían a Grok para generar la imagen o el video de 8 segundos. Viajan con tu propia cuota. No se revenden y no se mandan a otras páginas de intercambio de caras.
+          «Animar el plano» usa un modelo abierto y gratis (Wan 2.2, el mismo camino que el repositorio público nifty-vid). Si activas el interruptor, la imagen del plano —con tu cara si la pusiste— va a un espacio público de Hugging Face y vuelve un video corto que se mueve. Máximo 2 al día. No es Grok y no se paga. «Crear el plano» no envía la foto: solo el texto, y la cara se coloca en el teléfono. «Rodar video» sí usa Grok y tu cuota.
+        </p>
+        <p>
+          «Retrato con Grok» sigue siendo opcional y aparte. Solo entonces esa foto sale del teléfono hacia Grok, con tu propia cuota. No se revende y no se manda a páginas de intercambio de caras.
         </p>
         <p>
           Esas otras páginas, aunque digan que son gratis, piden subir la cara a un servidor ajeno. No están conectadas. Tampoco se copió código de repositorios de intercambio de caras: varios piden modelos opacos o se llevan la foto fuera del teléfono.

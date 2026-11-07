@@ -58,7 +58,13 @@ export const createPortrait = createServerFn({ method: "POST" })
     const b64 = body.data?.[0]?.b64_json ?? body.b64_json;
     const url = body.data?.[0]?.url ?? body.url;
     if (b64) return { ok: true as const, image: `data:image/png;base64,${b64}` };
-    if (url) return { ok: true as const, image: url };
+    if (url && url.startsWith("https://")) {
+      const img = await fetch(url);
+      if (!img.ok) return { ok: false as const, error: "El retrato no se pudo abrir." };
+      const bytes = Buffer.from(await img.arrayBuffer());
+      const type = img.headers.get("content-type")?.split(";")[0] || "image/png";
+      return { ok: true as const, image: `data:${type};base64,${bytes.toString("base64")}` };
+    }
     return { ok: false as const, error: "El retrato llegó vacío." };
   });
 
@@ -115,8 +121,16 @@ export const pollFilmTake = createServerFn({ method: "POST" })
     });
     if (!res.ok) return { ok: false as const, error: `No se pudo consultar la toma (${res.status}).` };
     const body = (await res.json()) as { status?: string; video?: { url?: string } };
-    if (body.status === "done" && body.video?.url) {
-      return { ok: true as const, status: "done" as const, url: body.video.url };
+    const url = body.video?.url ?? (body as { url?: string }).url;
+    if (body.status === "done" && url) {
+      const file = await fetch(url);
+      if (file.ok) {
+        const bytes = Buffer.from(await file.arrayBuffer());
+        if (bytes.length > 0 && bytes.length < 14_000_000) {
+          return { ok: true as const, status: "done" as const, url: `data:video/mp4;base64,${bytes.toString("base64")}` };
+        }
+      }
+      return { ok: true as const, status: "done" as const, url };
     }
     if (body.status === "failed" || body.status === "expired") {
       return { ok: false as const, error: "La toma no se completó. Puedes intentarlo una vez más." };

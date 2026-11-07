@@ -1,4 +1,4 @@
-import { expandDescription, sanitizeForModel } from "@/lib/studio/inspired";
+import { costumeLook, expandDescription, sanitizeForModel } from "@/lib/studio/inspired";
 import type { Actor, Film } from "@/lib/studio/types";
 
 export function modelPrompt(film: Film): string {
@@ -12,13 +12,25 @@ export function modelPrompt(film: Film): string {
     "Original characters only. Do not copy an existing franchise costume.",
     people.join(" "),
     `Story: ${story}.`,
-    "Natural skin, dramatic warm light, slow camera move.",
+    "One continuous filmed shot. The people walk, turn and react. Not a still photo, not a slideshow.",
   ].join(" ");
+}
+
+export function realPersonPrompt(actor: Actor): string {
+  const costume = costumeLook(actor.description, actor.role);
+  return [
+    "The person in this photo is the character. Keep their face exactly: same eyes, nose, mouth, jaw, skin tone and age.",
+    "Do not invent a different face. Only change the clothes and the light.",
+    `Put this same person in this costume, chest up, facing camera: ${costume}.`,
+    "Natural neck and shoulders. Bare face, no mask, no helmet, no text, no logo, no letters. Photoreal, one person.",
+  ]
+    .join(" ")
+    .slice(0, 780);
 }
 
 export function portraitPrompt(actor: Actor): string {
   const desc = sanitizeForModel(expandDescription(actor.description, actor.role));
-  return `Turn this photo into an original character portrait. Keep the same person's face recognizable. Costume and mood: ${desc}. No logos, no copied franchise suits, no text.`;
+  return `This photo is the character. Keep this person's face recognizable: same eyes, nose, mouth and skin. Change only the costume. ${desc}. No mask over the face, no logos, no text.`;
 }
 
 export function dayAllowance(kind: "video" | "still"): { key: string; used: number; max: number; ok: boolean } {

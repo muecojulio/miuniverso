@@ -19,14 +19,14 @@ function Home() {
           <p className="text-xs font-medium tracking-widest text-brass">ESTUDIO</p>
           <h1 className="mt-3 max-w-xl text-5xl text-paper">Mi Universo</h1>
           <p className="mt-4 max-w-md text-base text-muted">
-            Sube tu cara, di en qué héroe, villano o anime te conviertes, escribe la historia y guarda la película en el teléfono.
+            Sube tu cara, di en qué héroe, villano o anime te conviertes y crea el video en Rodaje. Hay un camino gratis y otro con Grok, que sí usa tu cuota.
           </p>
         </header>
         <section className="grid gap-3 sm:grid-cols-3">
           {[
-            ["1", "Elenco", "Una foto por persona. Pueden ser varias."],
-            ["2", "Historia", "Tú escribes lo que pasa."],
-            ["3", "Rodaje", "Se crea el video, aquí mismo."],
+            ["1", "Plano gratis", "Tu foto se queda en el teléfono y es la cara del personaje."],
+            ["2", "Video que se mueve", "Gratis. Anima ese plano. La imagen sale solo si lo aceptas."],
+            ["3", "Grok, opcional", "Pinta el traje sobre tu cara o rueda un video. Usa tu cuota."],
           ].map(([n, title, copy]) => (
             <article key={n} className="rounded-card border border-line bg-panel p-4">
               <p className="text-sm text-brass">{n}</p>
@@ -60,8 +60,8 @@ function Home() {
             ))}
           </ul>
           <div className="flex flex-wrap gap-2">
-            <Link to="/elenco" className="inline-flex min-h-11 items-center rounded-full bg-brass px-5 text-sm font-medium text-ink">
-              Empezar por el elenco
+            <Link to="/rodaje" className="inline-flex min-h-11 items-center rounded-full bg-brass px-5 text-sm font-medium text-ink">
+              Ir a Rodaje
             </Link>
             {films.length > 1 ? (
               <button type="button" className="min-h-11 px-3 text-sm text-muted" onClick={() => removeFilm(activeId)}>
@@ -71,7 +71,7 @@ function Home() {
           </div>
         </section>
         <p className="text-sm text-muted">
-          Tu cara no sale del teléfono, salvo que tú pidas una toma con Grok.{" "}
+          El plano gratis no envía tu foto. El video que se mueve sí la envía, y solo si activas el interruptor.{" "}
           <Link to="/privacidad" className="text-paper underline decoration-line underline-offset-4">
             Privacidad
           </Link>
