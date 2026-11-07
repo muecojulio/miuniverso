@@ -26,7 +26,7 @@ function Home() {
           {[
             ["1", "Plano gratis", "Tu foto se queda en el teléfono y es la cara del personaje."],
             ["2", "Video que se mueve", "Gratis. Anima ese plano. La imagen sale solo si lo aceptas."],
-            ["3", "Grok, opcional", "Pinta el traje sobre tu cara o rueda un video. Usa tu cuota."],
+            ["3", "Sin cuota", "El traje sobre tu cara y el video que se mueve no gastan Grok."],
           ].map(([n, title, copy]) => (
             <article key={n} className="rounded-card border border-line bg-panel p-4">
               <p className="text-sm text-brass">{n}</p>

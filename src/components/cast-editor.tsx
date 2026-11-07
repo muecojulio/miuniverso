@@ -2,9 +2,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { bustLine, RoleChips } from "@/components/role-chips";
-import { createPortrait } from "@/lib/studio/imagine";
 import { compressPhoto } from "@/lib/studio/photo";
-import { bumpAllowance, dayAllowance, portraitPrompt } from "@/lib/studio/prompt";
+import { portraitPrompt } from "@/lib/studio/prompt";
+import { dressPhoto } from "@/lib/studio/qwen";
 import { blankActor, useStudio } from "@/lib/studio/store";
 import { ROLE_LABEL, type Actor } from "@/lib/studio/types";
 
@@ -105,7 +105,7 @@ export function CastEditor({ forged }: { forged: boolean }) {
                   variant="quiet"
                   onClick={() => void makePortrait(actor, (portrait) => updateActor(actor.id, (current) => ({ ...current, portrait })))}
                 >
-                  Retrato con Grok
+                  Retrato gratis
                 </Button>
               ) : null}
             </div>
@@ -121,22 +121,10 @@ export function CastEditor({ forged }: { forged: boolean }) {
 }
 
 async function makePortrait(actor: Actor, save: (portrait: string) => void) {
-  const slot = dayAllowance("still");
-  if (!slot.ok) {
-    toast.error(`Hoy ya usaste ${slot.max} retratos con Grok.`);
-    return;
-  }
   try {
-    const result = await createPortrait({
-      data: { imageDataUrl: actor.photo ?? "", prompt: portraitPrompt(actor) },
-    });
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
-    }
-    bumpAllowance(slot.key);
-    save(result.image);
-    toast.success("Retrato listo. Sigue en este teléfono.");
+    const portrait = await dressPhoto(actor.photo ?? "", portraitPrompt(actor), new AbortController().signal);
+    save(portrait);
+    toast.success("Retrato listo. No usó cuota.");
   } catch (error) {
     toast.error(error instanceof Error ? error.message : "No se pudo crear el retrato.");
   }

@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { FRAME_H, FRAME_W } from "@/lib/studio/draw";
 import { encodeFilm, shareOrSave } from "@/lib/studio/encode";
-import { createPortrait, imagineReady, pollFilmTake, startFilmTake } from "@/lib/studio/imagine";
 import { loadImage } from "@/lib/studio/photo";
-import { bumpAllowance, dayAllowance, modelPrompt, realPersonPrompt } from "@/lib/studio/prompt";
+import { realPersonPrompt } from "@/lib/studio/prompt";
 import {
   bumpFreeAllowance,
   fetchFreeStill,
@@ -23,6 +22,7 @@ import {
   type FreePlate,
 } from "@/lib/studio/free-film";
 import { animateStill, bumpWan, wanAllowance } from "@/lib/studio/wan";
+import { bumpQwen, dressPhoto, qwenAllowance } from "@/lib/studio/qwen";
 import { useStudio } from "@/lib/studio/store";
 import { DURATION_LABEL, type Duration, type Film } from "@/lib/studio/types";
 
@@ -39,28 +39,12 @@ function Rodaje() {
   const previewRef = useRef<HTMLCanvasElement>(null);
   const [consent, setConsent] = useState(false);
   const [photoConsent, setPhotoConsent] = useState(false);
-  const [grokReady, setGrokReady] = useState(false);
-  const [wanOk, setWanOk] = useState(false);
   const [fromPhoto, setFromPhoto] = useState(false);
   const [phase, setPhase] = useState("");
   const [video, setVideo] = useState("");
   const [clip, setClip] = useState<Blob | null>(null);
   const [plates, setPlates] = useState<FreePlate[]>([]);
   const [nudge, setNudge] = useState<FacePlace>(ZERO);
-
-  useEffect(() => {
-    let alive = true;
-    imagineReady()
-      .then((result) => {
-        if (alive) setGrokReady(result.available);
-      })
-      .catch(() => {
-        if (alive) setGrokReady(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => {
     const canvas = previewRef.current;
@@ -86,8 +70,8 @@ function Rodaje() {
       toast.error("Primero crea el plano.");
       return;
     }
-    if (!wanOk) {
-      toast.error("Activa el interruptor si aceptas enviar la imagen al modelo gratis.");
+    if (!photoConsent) {
+      toast.error("Activa el interruptor si aceptas enviar la foto.");
       return;
     }
     const slot = wanAllowance();
@@ -119,78 +103,10 @@ function Rodaje() {
     }
   }
 
-  async function realClip() {
-    if (!film) return;
-    if (!photoConsent) {
-      toast.error("Activa el interruptor si aceptas enviar la foto a Grok.");
-      return;
-    }
-    const photos = film.cast.map((actor) => actor.photo).filter((photo): photo is string => Boolean(photo)).slice(0, 3);
-    if (!photos.length) {
-      toast.error("Hace falta tu foto en Elenco para que el video tenga tu cara.");
-      return;
-    }
-    const slot = dayAllowance("video");
-    if (!slot.ok) {
-      toast.error(`Hoy ya creaste ${slot.max} videos con Grok.`);
-      return;
-    }
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    retake();
-    setPhase("Rodando el video…");
-    try {
-      const started = await startFilmTake({
-        data: { prompt: modelPrompt(film), references: photos },
-      });
-      if (!started.ok) {
-        setPhase("");
-        toast.error(started.error);
-        return;
-      }
-      bumpAllowance(slot.key);
-      for (let i = 0; i < 36; i++) {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 5000);
-          controller.signal.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              reject(new DOMException("Cancelado", "AbortError"));
-            },
-            { once: true },
-          );
-        });
-        setPhase(`Rodando el video… ${i + 1}`);
-        const polled = await pollFilmTake({ data: { requestId: started.requestId } });
-        if (!polled.ok) {
-          setPhase("");
-          toast.error(polled.error);
-          return;
-        }
-        if (polled.status === "done") {
-          const blob = await (await fetch(polled.url)).blob();
-          setClip(blob);
-          setVideo(URL.createObjectURL(blob));
-          setPhase("");
-          toast.success("Video listo. Esto ya no son fotos quietas.");
-          return;
-        }
-      }
-      setPhase("");
-      toast.message("Sigue rodándose. Vuelve a pulsar en un momento.");
-    } catch (error) {
-      setPhase("");
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      toast.error(error instanceof Error ? error.message : "No se pudo rodar el video.");
-    }
-  }
-
   async function lookReal() {
     if (!film) return;
     if (!photoConsent) {
-      toast.error("Activa el interruptor si aceptas enviar la foto a Grok.");
+      toast.error("Activa el interruptor si aceptas enviar la foto.");
       return;
     }
     const people = film.cast.filter((actor) => actor.photo);
@@ -198,9 +114,9 @@ function Rodaje() {
       toast.error("Hace falta una foto en Elenco. Sin ella no hay una persona real.");
       return;
     }
-    const slot = dayAllowance("still");
+    const slot = qwenAllowance();
     if (slot.used + people.length > slot.max) {
-      toast.error(`Hoy ya no quedan retratos. Máximo ${slot.max}.`);
+      toast.error(`Hoy ya no quedan retratos gratis. Máximo ${slot.max}.`);
       return;
     }
     abortRef.current?.abort();
@@ -214,34 +130,26 @@ function Rodaje() {
         if (controller.signal.aborted) return;
         const actor = people[i];
         if (!actor?.photo) continue;
-        setPhase(`Pintando a ${actor.name || `persona ${i + 1}`}…`);
-        let result = await createPortrait({
-          data: { imageDataUrl: actor.photo, prompt: realPersonPrompt(actor) },
-        });
-        if (!result.ok && result.error.includes("Espera")) {
-          setPhase("Un momento entre retratos…");
-          await new Promise((resolve) => setTimeout(resolve, 21_000));
-          result = await createPortrait({
-            data: { imageDataUrl: actor.photo, prompt: realPersonPrompt(actor) },
-          });
-        }
-        if (!result.ok) {
-          setPhase("");
-          toast.error(result.error);
-          return;
-        }
-        bumpAllowance(slot.key);
-        const still = await loadImage(result.image);
+        setPhase(`Vistiendo a ${actor.name || `persona ${i + 1}`}…`);
+        const image = await dressPhoto(
+          actor.photo,
+          realPersonPrompt(actor),
+          controller.signal,
+          actor.role === "anime" ? "Photo-to-Anime" : "Anything2Real",
+        );
+        bumpQwen(slot.key);
+        const still = await loadImage(image);
         next.push(makePlate(still, actor.id, undefined, { x: 0.5, y: 0.4 }));
       }
       setNudge(ZERO);
       setFromPhoto(true);
       setPlates(next);
       setPhase("");
-      toast.success("El personaje sale con tu cara.");
+      toast.success("El personaje sale con tu cara. No usó cuota.");
     } catch (error) {
       setPhase("");
-      toast.error(error instanceof Error ? error.message : "No se pudo pintar a la persona.");
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.error(error instanceof Error ? error.message : "No se pudo vestir a la persona.");
     }
   }
 
@@ -343,7 +251,7 @@ function Rodaje() {
         <p className="text-xs font-medium tracking-widest text-brass">RODAJE</p>
         <h1 className="mt-2 text-4xl">La película</h1>
         <p className="mt-3 max-w-md text-sm text-muted">
-          Tu cara puede ir en el personaje sin pagar: la foto se queda en el teléfono y se coloca sobre el traje. Grok pinta cara y traje en una sola foto, pero eso sí usa tu cuota. No es obligatorio.
+          Nada de esto usa tu cuota. El plano deja la foto en el teléfono. Si quieres el traje pintado sobre tu cara, o un video que se mueva, la imagen sale solo si lo aceptas.
         </p>
       </header>
       {!film.cast.length ? (
@@ -368,24 +276,18 @@ function Rodaje() {
         <Button onClick={() => void shoot()} disabled={Boolean(phase)}>
           {phase || "Crear el plano"}
         </Button>
-        <h2 className="pt-2 text-2xl">Grok, si quieres gastarla</h2>
+        <h2 className="pt-2 text-2xl">Tu cara, sin cuota</h2>
         <p className="text-sm text-muted">
-          Opcional. Grok ve tu foto y pinta el traje sobre esa misma cara. Se ve más unido, y cada retrato descuenta tu cuota. Máximo 8 al día.
+          Un modelo abierto pinta el traje sobre tu foto. No es Grok y no se cobra. Máximo 3 al día. Luego puedes animar ese plano, también gratis.
         </p>
         <Toggle
           checked={photoConsent}
           onChange={setPhotoConsent}
-          label="Acepto enviar la foto a Grok"
-          hint={grokReady ? "Solo al pulsar el botón. No va a una página de intercambio de caras." : "Ahora mismo Grok no está disponible."}
+          label="Acepto enviar la foto"
+          hint="Va a un espacio público y gratuito. Solo al pulsar el botón. No es una página de intercambio de caras."
         />
-        <Button onClick={() => void lookReal()} disabled={Boolean(phase) || !grokReady}>
-          {phase && photoConsent ? phase : "Crear con mi cara"}
-        </Button>
-        <p className="text-sm text-muted">
-          Para que sea un video y no fotos quietas, Grok rueda ocho segundos: la persona se mueve. También usa tu cuota. Máximo 4 al día.
-        </p>
-        <Button onClick={() => void realClip()} disabled={Boolean(phase) || !grokReady}>
-          Rodar video
+        <Button onClick={() => void lookReal()} disabled={Boolean(phase)}>
+          {phase.startsWith("Vistiendo") ? phase : "Vestir con mi cara"}
         </Button>
         {plates.length ? (
           <div className="space-y-3">
@@ -434,12 +336,9 @@ function Rodaje() {
         ) : (
           <p className="text-sm text-muted">Todavía no hay plano. Pulsa «Crear el plano» y aquí aparecerá para animarlo.</p>
         )}
-        <Toggle
-          checked={wanOk}
-          onChange={setWanOk}
-          label="Video de verdad, gratis"
-          hint="Anima el plano con un modelo abierto. La imagen sale hacia Hugging Face. Máximo 2 al día. Tarda unos minutos."
-        />
+        <p className="text-sm text-muted">
+          Anima el plano con un modelo abierto. La imagen sale si aceptaste enviarla. Máximo 2 al día. Tarda unos minutos. No usa cuota.
+        </p>
         <Button onClick={() => void animate()} disabled={Boolean(phase) || !plates.length}>
           {phase.startsWith("Animando") ? phase : "Animar el plano"}
         </Button>
