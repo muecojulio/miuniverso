@@ -15,7 +15,7 @@ export function bumpWan(key: string) {
   localStorage.setItem(key, String(used + 1));
 }
 
-export async function animateStill(image: Blob, signal: AbortSignal): Promise<string> {
+export async function animateStill(image: Blob, signal: AbortSignal, motion?: string): Promise<string> {
   const form = new FormData();
   form.append("files", image, "plano.jpg");
   const uploaded = await fetch(`${SPACE}/gradio_api/upload`, { method: "POST", body: form, signal });
@@ -35,7 +35,8 @@ export async function animateStill(image: Blob, signal: AbortSignal): Promise<st
   const data = [
     file,
     null,
-    "slow cinematic motion, the person breathes and turns slightly, cloth and cape move, continuous shot, not a frozen photo",
+    motion?.trim() ||
+      "slow cinematic motion, the person breathes and turns slightly, cloth and cape move, continuous shot, not a frozen photo",
     6,
     NEGATIVE,
     3.5,

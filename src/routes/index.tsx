@@ -19,7 +19,7 @@ function Home() {
           <p className="text-xs font-medium tracking-widest text-brass">ESTUDIO</p>
           <h1 className="mt-3 max-w-xl text-5xl text-paper">Mi Universo</h1>
           <p className="mt-4 max-w-md text-base text-muted">
-            Sube tu cara, di en qué héroe, villano o anime te conviertes y crea el video en Rodaje. Hay un camino gratis y otro con Grok, que sí usa tu cuota.
+            Sube tu cara, escribe la historia y pulsa Hacer la película. El retrato se guarda en la persona y el video se mueve con lo que escribiste.
           </p>
         </header>
         <section className="grid gap-3 sm:grid-cols-3">

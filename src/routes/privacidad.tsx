@@ -18,7 +18,7 @@ function Privacidad() {
           El botón «Guardar video» crea el archivo en el propio teléfono. Nadie más lo recibe.
         </p>
         <p>
-          «Vestir con mi cara» y «Retrato gratis» usan un editor público de Qwen, el modelo abierto Qwen-Image-Edit. «Animar el plano» usa Wan 2.2, el mismo camino que el repositorio público nifty-vid. Si activas el interruptor, la foto va a ese espacio gratuito y vuelve. No usan tu cuota de Grok. Hay un tope al día. «Crear el plano» no envía la foto: solo el texto, y la cara se coloca en el teléfono.
+          «Hacer la película» usa tu historia como el movimiento del video. Si aceptas enviar la foto, un editor público de Qwen viste a la persona, el retrato se guarda en Elenco y Wan rueda ese plano. Si no la envías, el video se arma en el teléfono y la foto no sale. «Crear el plano» solo manda el texto.
         </p>
         <p>
           «Retrato con Grok» sigue siendo opcional y aparte. Solo entonces esa foto sale del teléfono hacia Grok, con tu propia cuota. No se revende y no se manda a páginas de intercambio de caras.

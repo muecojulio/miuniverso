@@ -28,6 +28,17 @@ export function realPersonPrompt(actor: Actor): string {
     .slice(0, 780);
 }
 
+export function motionLine(film: Film): string {
+  const story = sanitizeForModel(film.story || film.title || "A quiet heroic dawn");
+  return [
+    "One continuous filmed shot.",
+    `What happens: ${story}.`,
+    "The person moves through that moment, walks, turns and reacts. Cloth and hair move. Not a frozen photo, not a slideshow.",
+  ]
+    .join(" ")
+    .slice(0, 420);
+}
+
 export function portraitPrompt(actor: Actor): string {
   const desc = sanitizeForModel(expandDescription(actor.description, actor.role));
   return `This photo is the character. Keep this person's face recognizable: same eyes, nose, mouth and skin. Change only the costume. ${desc}. No mask over the face, no logos, no text.`;

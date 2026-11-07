@@ -9,7 +9,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { FRAME_H, FRAME_W } from "@/lib/studio/draw";
 import { encodeFilm, shareOrSave } from "@/lib/studio/encode";
 import { loadImage } from "@/lib/studio/photo";
-import { realPersonPrompt } from "@/lib/studio/prompt";
+import { motionLine, realPersonPrompt } from "@/lib/studio/prompt";
 import {
   bumpFreeAllowance,
   fetchFreeStill,
@@ -34,6 +34,7 @@ function Rodaje() {
   const film = useStudio((s) => s.films.find((item) => item.id === s.activeId));
   const setDuration = useStudio((s) => s.setDuration);
   const setFlag = useStudio((s) => s.setFlag);
+  const updateActor = useStudio((s) => s.updateActor);
   const stageRef = useRef<StageHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -65,6 +66,7 @@ function Rodaje() {
   }
 
   async function animate() {
+    if (!film) return;
     const canvas = previewRef.current;
     if (!canvas || !plates.length) {
       toast.error("Primero crea el plano.");
@@ -87,7 +89,7 @@ function Rodaje() {
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((file) => (file ? resolve(file) : reject(new Error("No se pudo leer el plano."))), "image/jpeg", 0.9);
       });
-      const url = await animateStill(blob, controller.signal);
+      const url = await animateStill(blob, controller.signal, motionLine(film));
       bumpWan(slot.key);
       const filmFile = await fetch(url);
       if (!filmFile.ok) throw new Error("El video llegó, pero no se pudo abrir.");
@@ -138,6 +140,7 @@ function Rodaje() {
           actor.role === "anime" ? "Photo-to-Anime" : "Anything2Real",
         );
         bumpQwen(slot.key);
+        updateActor(actor.id, (current) => ({ ...current, portrait: image }));
         const still = await loadImage(image);
         next.push(makePlate(still, actor.id, undefined, { x: 0.5, y: 0.4 }));
       }
@@ -145,11 +148,125 @@ function Rodaje() {
       setFromPhoto(true);
       setPlates(next);
       setPhase("");
-      toast.success("El personaje sale con tu cara. No usó cuota.");
+      toast.success("El personaje sale con tu cara. El retrato queda guardado en esa persona.");
     } catch (error) {
       setPhase("");
       if (error instanceof DOMException && error.name === "AbortError") return;
       toast.error(error instanceof Error ? error.message : "No se pudo vestir a la persona.");
+    }
+  }
+
+  async function makeMovie() {
+    if (!film) return;
+    if (!(film.story.trim() || film.title.trim() || film.cast.some((actor) => actor.description.trim()))) {
+      toast.error("Escribe la historia o describe al personaje.");
+      return;
+    }
+    const people = film.cast.filter((actor) => actor.photo);
+    if (people.length && !photoConsent) {
+      toast.error("Activa el interruptor si aceptas enviar la foto.");
+      return;
+    }
+    if (!people.length && !consent) {
+      toast.error("Activa el interruptor si aceptas enviar el texto.");
+      return;
+    }
+    const missing = people.filter((actor) => !actor.portrait);
+    const qwen = qwenAllowance();
+    if (missing.length && qwen.used + missing.length > qwen.max) {
+      toast.error(`Hoy ya no quedan retratos gratis. Máximo ${qwen.max}.`);
+      return;
+    }
+    const moving = people.length > 0 || photoConsent;
+    const wan = wanAllowance();
+    if (moving && !wan.ok) {
+      toast.error(`Hoy ya animaste ${wan.max} videos gratis.`);
+      return;
+    }
+    const free = freeAllowance();
+    if (!people.length && !free.ok) {
+      toast.error(`Hoy ya creaste ${free.max} videos gratis.`);
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    retake();
+    try {
+      const next: FreePlate[] = [];
+      if (people.length) {
+        for (let i = 0; i < people.length; i++) {
+          const actor = people[i];
+          if (!actor?.photo) continue;
+          let image = actor.portrait;
+          if (!image) {
+            setPhase(`Vistiendo a ${actor.name || `persona ${i + 1}`}…`);
+            image = await dressPhoto(
+              actor.photo,
+              realPersonPrompt(actor),
+              controller.signal,
+              actor.role === "anime" ? "Photo-to-Anime" : "Anything2Real",
+            );
+            bumpQwen(qwen.key);
+            updateActor(actor.id, (current) => ({ ...current, portrait: image }));
+          }
+          next.push(makePlate(await loadImage(image), actor.id, undefined, { x: 0.5, y: 0.4 }));
+        }
+        setFromPhoto(true);
+      } else {
+        const faces = await loadCastFaces(film);
+        const beats = sceneBeats(film);
+        const seedBase = Date.now() % 100000;
+        for (let i = 0; i < beats.length; i++) {
+          setPhase(`Plano ${i + 1} de ${beats.length}…`);
+          const still = await fetchFreeStill(
+            beats[i].prompt,
+            seedBase + i * 17,
+            (seconds) => setPhase(`Pausa de la API gratis, ${seconds}s…`),
+            controller.signal,
+          );
+          const actorId = beats[i].actorId;
+          next.push(
+            makePlate(
+              still,
+              actorId,
+              actorId ? faces.photos.get(actorId) : undefined,
+              actorId ? faces.focus.get(actorId) ?? { x: 0.5, y: 0.4 } : { x: 0.5, y: 0.4 },
+            ),
+          );
+        }
+        bumpFreeAllowance(free.key);
+        setFromPhoto(false);
+      }
+      setNudge(ZERO);
+      setPlates(next);
+      if (!moving) {
+        await assemble(film, next);
+        return;
+      }
+      setPhase("Rodando la historia…");
+      const canvas = document.createElement("canvas");
+      canvas.width = FRAME_W;
+      canvas.height = FRAME_H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx || !next[0]) throw new Error("No se pudo leer el plano.");
+      paintFreeTake(ctx, [next[0]], ZERO, 1.2, 8, false);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((file) => (file ? resolve(file) : reject(new Error("No se pudo leer el plano."))), "image/jpeg", 0.9);
+      });
+      const url = await animateStill(blob, controller.signal, motionLine(film));
+      bumpWan(wan.key);
+      const filmFile = await fetch(url);
+      if (!filmFile.ok) throw new Error("El video llegó, pero no se pudo abrir.");
+      const movie = await filmFile.blob();
+      setClip(movie);
+      setVideo(URL.createObjectURL(movie));
+      setPhase("");
+      toast.success("Película lista. El movimiento sigue tu historia.");
+    } catch (error) {
+      setPhase("");
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.error(error instanceof Error ? error.message : "No se pudo hacer la película.");
     }
   }
 
@@ -203,15 +320,15 @@ function Rodaje() {
     }
   }
 
-  async function assemble(current: Film) {
-    if (!plates.length) return;
+  async function assemble(current: Film, frames: FreePlate[] = plates) {
+    if (!frames.length) return;
     setPhase("Montando el video…");
     retake();
     try {
       const canvas = document.createElement("canvas");
       canvas.width = FRAME_W;
       canvas.height = FRAME_H;
-      const duration = plates.length === 1 ? 8 : plates.length * 4.5;
+      const duration = frames.length === 1 ? 8 : frames.length * 4.5;
       const result = await encodeFilm({
         canvas,
         duration,
@@ -220,7 +337,7 @@ function Rodaje() {
         draw: (time) => {
           const ctx = canvas.getContext("2d");
           if (!ctx) return;
-          paintFreeTake(ctx, plates, nudge, time, duration, current.grain);
+          paintFreeTake(ctx, frames, nudge, time, duration, current.grain);
         },
       });
       setClip(result.blob);
@@ -260,7 +377,15 @@ function Rodaje() {
         </p>
       ) : null}
       <section className="mb-8 space-y-3 rounded-card border border-line bg-panel p-4">
-        <h2 className="text-2xl">Gratis, con tu cara</h2>
+        <h2 className="text-2xl">Hacer la película</h2>
+        <p className="text-sm text-muted">
+          Un solo paso. Si hay foto y aceptas enviarla, viste a la persona, guarda el retrato y rueda lo que escribiste. Si no envías la foto, el video se arma en el teléfono.
+        </p>
+        <Button onClick={() => void makeMovie()} disabled={Boolean(phase)}>
+          Hacer la película
+        </Button>
+        {phase ? <p className="text-sm text-brass">{phase}</p> : null}
+        <h2 className="pt-2 text-2xl">Gratis, con tu cara</h2>
         <p className="text-sm text-muted">
           No se paga y la foto no sale del teléfono. El traje lo dibuja una inteligencia gratuita y tu foto es la cara del personaje. Se nota más el borde que con Grok.
         </p>
