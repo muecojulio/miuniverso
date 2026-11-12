@@ -1,6 +1,7 @@
 import { Download, Pause, Play, RotateCcw, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, type ActionStatus } from "@/components/ui/button";
+import { HorizontalScroll } from "@/components/ui/horizontal-scroll";
 import { cn } from "@/lib/cn";
 import { direct } from "@/lib/studio/director";
 import { FRAME_H, FRAME_W, filmLength, paintFilm } from "@/lib/studio/draw";
@@ -30,6 +31,7 @@ export function Stage({ compact = false }: { compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [note, setNote] = useState("");
+  const [status, setStatus] = useState<ActionStatus>("idle");
 
   const scenes = useMemo(() => (film ? direct(film) : []), [film]);
   const duration = useMemo(() => (film ? filmLength(film) : 0), [film]);
@@ -102,6 +104,7 @@ export function Stage({ compact = false }: { compact?: boolean }) {
     const canvas = canvasRef.current;
     if (!current || !canvas || busy) return;
     setPlaying(false);
+    setStatus("idle");
     setBusy(true);
     setNote("Renderizando película local en alta definición…");
     setProgress(0.02);
@@ -117,7 +120,13 @@ export function Stage({ compact = false }: { compact?: boolean }) {
       const safe = safeFilename(current.title, "mi-universo");
       await shareOrSave(result.blob, `${safe}.${result.ext}`);
       setNote("Película exportada en tu dispositivo sin enviar datos a ningún servidor.");
-    } catch {
+      setStatus("success");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setNote("Exportación cancelada. Tu película sigue disponible aquí.");
+        return;
+      }
+      setStatus("error");
       setNote("No se pudo exportar el archivo en este navegador, pero puedes reproducirla aquí.");
     } finally {
       setBusy(false);
@@ -182,7 +191,12 @@ export function Stage({ compact = false }: { compact?: boolean }) {
           compact ? "max-w-[270px]" : "max-w-sm",
         )}
       >
-        <canvas ref={canvasRef} className="aspect-[9/16] w-full block" />
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label={`Vista previa de la película ${film.title || "sin título"}`}
+          className="aspect-[9/16] w-full block"
+        />
       </div>
 
       {/* Interactive Timeline Scrubber + Scene Jump Pills */}
@@ -190,16 +204,20 @@ export function Stage({ compact = false }: { compact?: boolean }) {
         <input
           type="range"
           aria-label="Línea de tiempo de la película"
+          aria-valuetext={`${formatTimecode(cursorTime)} de ${formatTimecode(duration)}`}
           min={0}
           max={Math.max(1, duration)}
           step={0.05}
           value={Math.min(cursorTime, Math.max(1, duration))}
           onChange={(e) => scrubTo(Number(e.target.value))}
-          className="h-2 w-full accent-brass"
+          className="w-full accent-brass"
         />
 
         {!compact ? (
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <HorizontalScroll
+            label="Escenas de la película"
+            selectionKey={scenes.indexOf(activeScene!)}
+          >
             {scenes.map((scene, idx) => {
               const isCurrent = scene === activeScene;
               const label =
@@ -213,18 +231,13 @@ export function Stage({ compact = false }: { compact?: boolean }) {
                   key={`${scene.kind}-${idx}`}
                   type="button"
                   onClick={() => scrubTo(scene.start + 0.15)}
-                  className={cn(
-                    "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-                    isCurrent
-                      ? "border-brass bg-brass/20 text-brass"
-                      : "border-line bg-panel-2/70 text-muted hover:text-paper",
-                  )}
+                  className={cn("chip", isCurrent && "border-brass bg-brass/20 text-brass")}
                 >
                   {label}
                 </button>
               );
             })}
-          </div>
+          </HorizontalScroll>
         ) : null}
       </div>
 
@@ -234,7 +247,14 @@ export function Stage({ compact = false }: { compact?: boolean }) {
             <span>Codificando MP4 en tu dispositivo…</span>
             <span>{Math.round(progress * 100)}%</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-line">
+          <div
+            role="progressbar"
+            aria-label="Exportación de video local"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress * 100)}
+            className="h-2 overflow-hidden rounded-full bg-line"
+          >
             <div
               className="h-full bg-gradient-to-r from-amber-300 via-brass to-crimson transition-[width] duration-200"
               style={{ width: `${Math.round(progress * 100)}%` }}
@@ -257,8 +277,13 @@ export function Stage({ compact = false }: { compact?: boolean }) {
         {!compact ? (
           <Button
             variant="crimson"
-            onClick={() => void save()}
-            disabled={busy || film.cast.length === 0}
+            onClick={() => save()}
+            loading={busy}
+            loadingLabel={`Exportando ${Math.round(progress * 100)}%`}
+            status={status}
+            successLabel="Video exportado"
+            errorLabel="Reintentar exportación"
+            disabled={film.cast.length === 0}
           >
             <Download size={16} />
             Exportar video
@@ -272,7 +297,14 @@ export function Stage({ compact = false }: { compact?: boolean }) {
           Suma al menos un personaje en Elenco o Forja para activar la exportación MP4.
         </p>
       ) : null}
-      {note ? <p className="text-xs text-muted">{note}</p> : null}
+      {note ? (
+        <p
+          role={status === "error" ? "alert" : "status"}
+          className={cn("text-xs", status === "error" ? "text-crimson" : "text-muted")}
+        >
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }

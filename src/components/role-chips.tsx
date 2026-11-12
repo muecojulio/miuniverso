@@ -1,5 +1,8 @@
-import { Flame, Shield, Sparkles } from "lucide-react";
+import { Check, Flame, Shield, Sparkles } from "lucide-react";
+import { useRef, type KeyboardEvent } from "react";
+import { HorizontalScroll } from "@/components/ui/horizontal-scroll";
 import { cn } from "@/lib/cn";
+import { nextRovingIndex } from "@/lib/ui/gestures";
 import type { Role } from "@/lib/studio/types";
 
 export function ChoiceRow<T extends string>({
@@ -7,44 +10,67 @@ export function ChoiceRow<T extends string>({
   options,
   onChange,
   columns = 3,
+  label = "Opciones disponibles",
 }: {
   value: T;
   options: { id: T; label: string; sub?: string }[];
   onChange: (value: T) => void;
   columns?: 2 | 3 | 4;
+  label?: string;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const current = options.findIndex((option) => option.id === value);
+    const next = nextRovingIndex(event.key, current, options.length);
+    if (next === null) return;
+    event.preventDefault();
+    onChange(options[next]!.id);
+    ref.current
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+      [next]?.focus({ preventScroll: true });
+  }
   return (
-    <div
-      className={cn(
-        "grid gap-2",
-        columns === 2 && "grid-cols-2",
-        columns === 4 && "grid-cols-2 sm:grid-cols-4",
-        columns === 3 && "grid-cols-3",
-      )}
-    >
-      {options.map((option) => {
-        const on = option.id === value;
-        return (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => onChange(option.id)}
-            className={cn(
-              "flex min-h-11 flex-col items-center justify-center rounded-2xl border px-3 py-2 text-sm font-medium transition-all duration-200 active:scale-[0.97]",
-              on
-                ? "border-brass bg-gradient-to-b from-amber-300 to-brass text-ink shadow-[0_6px_20px_-6px_rgba(245,184,75,0.6)]"
-                : "border-line bg-panel-2/75 text-paper hover:border-brass/40 hover:bg-panel-2",
-            )}
-          >
-            <span>{option.label}</span>
-            {option.sub ? (
-              <span className={cn("text-[11px]", on ? "text-ink/80" : "text-muted")}>
-                {option.sub}
+    <div ref={ref}>
+      <HorizontalScroll
+        label={label}
+        role="radiogroup"
+        className={cn(
+          "choice-row",
+          columns === 2 && "choice-row-two",
+          columns === 4 && "choice-row-four",
+        )}
+        selectionKey={value}
+        onKeyDown={onKeyDown}
+      >
+        {options.map((option) => {
+          const on = option.id === value;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              data-selected={on}
+              tabIndex={on ? 0 : -1}
+              onClick={() => onChange(option.id)}
+              className={cn(
+                "chip min-h-13 flex-col rounded-2xl px-4",
+                on && "border-brass bg-brass text-ink",
+              )}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {on ? <Check size={13} aria-hidden="true" /> : null}
+                {option.label}
               </span>
-            ) : null}
-          </button>
-        );
-      })}
+              {option.sub ? (
+                <span className={cn("text-[11px]", on ? "text-ink/80" : "text-muted")}>
+                  {option.sub}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </HorizontalScroll>
     </div>
   );
 }
@@ -82,30 +108,48 @@ const ROLE_CARDS: {
   },
 ];
 
-export function RoleChips({
-  value,
-  onChange,
-}: {
-  value: Role;
-  onChange: (role: Role) => void;
-}) {
+export function RoleChips({ value, onChange }: { value: Role; onChange: (role: Role) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const next = nextRovingIndex(
+      event.key,
+      ROLE_CARDS.findIndex((card) => card.id === value),
+      ROLE_CARDS.length,
+    );
+    if (next === null) return;
+    event.preventDefault();
+    onChange(ROLE_CARDS[next]!.id);
+    ref.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  }
   return (
-    <div className="grid grid-cols-3 gap-2.5">
+    <div
+      ref={ref}
+      role="radiogroup"
+      aria-label="Tipo de personaje"
+      className="grid grid-cols-3 gap-2.5"
+      onKeyDown={onKeyDown}
+    >
       {ROLE_CARDS.map(({ id, label, hint, activeClass, Icon }) => {
         const on = value === id;
         return (
           <button
             key={id}
             type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={on ? 0 : -1}
             onClick={() => onChange(id)}
             className={cn(
-              "flex min-h-16 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2.5 text-center transition-all duration-200 active:scale-[0.97]",
+              "relative flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2.5 text-center transition-all duration-200 active:scale-[0.97]",
               on
                 ? activeClass
                 : "border-line bg-panel-2/70 text-paper hover:border-line/90 hover:bg-panel-2",
             )}
           >
-            <Icon size={18} className={cn(on ? "scale-110" : "text-muted")} />
+            {on ? (
+              <Check size={12} className="absolute top-1.5 right-1.5" aria-hidden="true" />
+            ) : null}
+            <Icon size={18} className={cn(on ? "scale-110" : "text-muted")} aria-hidden="true" />
             <span className="text-sm font-semibold leading-tight">{label}</span>
             <span className="text-[11px] leading-tight text-muted">{hint}</span>
           </button>

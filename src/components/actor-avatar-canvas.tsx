@@ -4,6 +4,7 @@ import { drawActor } from "@/lib/studio/draw";
 import { shade, toLook, type Power } from "@/lib/studio/look";
 import { loadImage } from "@/lib/studio/photo";
 import type { Actor } from "@/lib/studio/types";
+import { useReducedMotion } from "@/lib/ui/use-media-query";
 
 const POWER_BACKDROP: Record<Power, [string, string]> = {
   luz: ["#3b2c12", "#140f1d"],
@@ -30,6 +31,9 @@ export function ActorAvatarCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const redrawRef = useRef<(() => void) | null>(null);
+  const reducedMotion = useReducedMotion();
+  const moving = animate && !reducedMotion;
 
   useEffect(() => {
     let cancelled = false;
@@ -38,10 +42,16 @@ export function ActorAvatarCanvas({
     } else {
       void loadImage(actor.photo)
         .then((img) => {
-          if (!cancelled) imgRef.current = img;
+          if (!cancelled) {
+            imgRef.current = img;
+            redrawRef.current?.();
+          }
         })
         .catch(() => {
-          if (!cancelled) imgRef.current = null;
+          if (!cancelled) {
+            imgRef.current = null;
+            redrawRef.current?.();
+          }
         });
     }
     return () => {
@@ -102,11 +112,15 @@ export function ActorAvatarCanvas({
       );
     };
 
-    if (!animate) {
+    redrawRef.current = () => renderFrame(1.4);
+    if (!moving) {
       // Render immediately and once more after photo decode settles
       renderFrame(1.4);
       const timer = setTimeout(() => renderFrame(1.4), 90);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        redrawRef.current = null;
+      };
     }
 
     let raf = 0;
@@ -116,12 +130,16 @@ export function ActorAvatarCanvas({
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [actor, animate]);
+    return () => {
+      cancelAnimationFrame(raf);
+      redrawRef.current = null;
+    };
+  }, [actor, moving]);
 
   return (
     <canvas
       ref={canvasRef}
+      role="img"
       aria-label={`Vista previa de ${actor.name || "personaje"}`}
       className={cn(
         "aspect-[13/16] w-full rounded-2xl border border-line/80 bg-ink object-cover shadow-inner",

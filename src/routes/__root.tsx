@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { Shell } from "@/components/shell";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Mi Universo";
@@ -12,7 +13,10 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: APP_NAME },
-      { name: "description", content: "Crea una película con tu cara como héroe, villano o personaje de anime." },
+      {
+        name: "description",
+        content: "Crea una película con tu cara como héroe, villano o personaje de anime.",
+      },
       { name: "theme-color", content: "#0d0b14" },
     ],
     links: [
@@ -30,8 +34,16 @@ export const Route = createRootRoute({
       <body>
         <PreviewHostBridge />
         <AuthProvider>
-          <Outlet />
-          <Toaster theme="dark" position="top-center" />
+          <Shell>
+            <Outlet />
+          </Shell>
+          <Toaster
+            theme="dark"
+            position="top-center"
+            closeButton
+            visibleToasts={3}
+            toastOptions={{ className: "studio-toast" }}
+          />
         </AuthProvider>
         <Scripts />
       </body>

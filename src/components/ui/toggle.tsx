@@ -1,4 +1,6 @@
 import * as Switch from "@radix-ui/react-switch";
+import { Check } from "lucide-react";
+import { useId } from "react";
 import { cn } from "@/lib/cn";
 
 export function Toggle({
@@ -7,38 +9,59 @@ export function Toggle({
   label,
   hint,
   accent = "brass",
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   label: string;
   hint?: string;
   accent?: "brass" | "emerald" | "crimson";
+  disabled?: boolean;
 }) {
+  const id = useId();
   return (
-    <label
+    <div
       className={cn(
-        "flex min-h-12 items-center justify-between gap-4 rounded-card border px-4 py-3 transition-colors duration-200",
-        checked
-          ? "border-brass/45 bg-panel-2/80 shadow-[0_0_24px_-12px_rgba(245,184,75,0.35)]"
-          : "border-line bg-panel/85 hover:border-line/90",
+        "flex min-h-12 items-center justify-between gap-3 rounded-card border px-4 py-3 transition-colors duration-200",
+        checked ? "border-brass/45 bg-panel-2/80" : "border-line bg-panel/85",
+        disabled && "opacity-50",
       )}
     >
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-paper">{label}</span>
-        {hint ? <span className="mt-0.5 block text-xs leading-relaxed text-muted">{hint}</span> : null}
-      </span>
+      <label htmlFor={id} className={cn("min-w-0 flex-1", !disabled && "cursor-pointer")}>
+        <span id={`${id}-label`} className="block text-sm font-medium text-paper">
+          {label}
+        </span>
+        {hint ? (
+          <span id={`${id}-hint`} className="mt-0.5 block text-xs leading-relaxed text-muted">
+            {hint}
+          </span>
+        ) : null}
+      </label>
       <Switch.Root
+        id={id}
         checked={checked}
         onCheckedChange={onChange}
-        className={cn(
-          "relative h-7 w-12 shrink-0 rounded-full bg-line transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass",
-          accent === "brass" && "data-[state=checked]:bg-brass",
-          accent === "emerald" && "data-[state=checked]:bg-emerald",
-          accent === "crimson" && "data-[state=checked]:bg-crimson",
-        )}
+        disabled={disabled}
+        aria-labelledby={`${id}-label`}
+        aria-describedby={hint ? `${id}-hint` : undefined}
+        className="switch-control"
       >
-        <Switch.Thumb className="block size-5 translate-x-1 rounded-full bg-paper shadow transition-transform duration-200 will-change-transform data-[state=checked]:translate-x-6 data-[state=checked]:bg-ink" />
+        <span
+          className={cn("switch-track", checked && `switch-track-${accent}`)}
+          aria-hidden="true"
+        >
+          <span className={cn("switch-word", checked ? "left-1.5" : "right-1.5")}>
+            {checked ? "SÍ" : "NO"}
+          </span>
+          <Switch.Thumb className="switch-thumb">
+            {checked ? (
+              <Check size={12} strokeWidth={3} />
+            ) : (
+              <span className="h-0.5 w-2 rounded-full bg-muted" />
+            )}
+          </Switch.Thumb>
+        </span>
       </Switch.Root>
-    </label>
+    </div>
   );
 }

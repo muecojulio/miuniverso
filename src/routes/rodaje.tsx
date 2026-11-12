@@ -2,6 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Clapperboard,
   Download,
+  LoaderCircle,
+  TriangleAlert,
   Film as FilmIcon,
   RotateCcw,
   Sparkles,
@@ -12,9 +14,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ChoiceRow } from "@/components/role-chips";
-import { Shell } from "@/components/shell";
 import { Stage } from "@/components/stage";
-import { Button } from "@/components/ui/button";
+import { Button, type ActionStatus } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { FRAME_H, FRAME_W } from "@/lib/studio/draw";
 import { encodeFilm, shareOrSave } from "@/lib/studio/encode";
@@ -41,6 +42,7 @@ import { animateStill, bumpWan, wanAllowance } from "@/lib/studio/wan";
 export const Route = createFileRoute("/rodaje")({ component: Rodaje });
 
 const ZERO: FacePlace = { x: 0, y: 0, scale: 0 };
+type RodajeJob = "movie" | "still" | "look" | "animate" | "assemble";
 
 function Rodaje() {
   const film = useStudio((s) => s.films.find((item) => item.id === s.activeId));
@@ -56,6 +58,12 @@ function Rodaje() {
 
   const [fromPhoto, setFromPhoto] = useState(false);
   const [phase, setPhase] = useState("");
+  const [activeJob, setActiveJob] = useState<RodajeJob | null>(null);
+  const jobLock = useRef<RodajeJob | null>(null);
+  const [failedJob, setFailedJob] = useState<RodajeJob | null>(null);
+  const [jobError, setJobError] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<ActionStatus>("idle");
   const [video, setVideo] = useState("");
   const [clip, setClip] = useState<Blob | null>(null);
   const [plates, setPlates] = useState<FreePlate[]>([]);
@@ -89,9 +97,41 @@ function Rodaje() {
     setClip(null);
   }
 
-  function cancelActiveJob() {
-    abortRef.current?.abort();
+  function beginJob(kind: RodajeJob): AbortController | null {
+    if (jobLock.current) return null;
+    const controller = new AbortController();
+    jobLock.current = kind;
+    abortRef.current = controller;
+    setActiveJob(kind);
+    setFailedJob(null);
+    setJobError("");
+    setCancelling(false);
+    return controller;
+  }
+
+  function finishJob(kind: RodajeJob) {
+    if (jobLock.current !== kind) return;
+    jobLock.current = null;
+    abortRef.current = null;
+    setActiveJob(null);
     setPhase("");
+    setCancelling(false);
+  }
+
+  function failJob(kind: RodajeJob, error: unknown, fallback: string) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    const message =
+      error instanceof Error && !(error instanceof TypeError) ? error.message : fallback;
+    setFailedJob(kind);
+    setJobError(message);
+    toast.error(message);
+  }
+
+  function cancelActiveJob() {
+    if (!abortRef.current || cancelling) return;
+    setCancelling(true);
+    setPhase("Cancelando la operación…");
+    abortRef.current.abort();
     toast.message("Operación cancelada.");
   }
 
@@ -111,9 +151,8 @@ function Rodaje() {
       toast.error(`Hoy ya animaste tus ${slot.max} videos gratis.`);
       return;
     }
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = beginJob("animate");
+    if (!controller) return;
     setPhase("Animando el plano con movimiento cinematográfico…");
     try {
       const blob = await new Promise<Blob>((resolve, reject) => {
@@ -138,7 +177,9 @@ function Rodaje() {
     } catch (error) {
       setPhase("");
       if (error instanceof DOMException && error.name === "AbortError") return;
-      toast.error(error instanceof Error ? error.message : "No se pudo animar el plano.");
+      failJob("animate", error, "No se pudo animar el plano.");
+    } finally {
+      finishJob("animate");
     }
   }
 
@@ -158,9 +199,8 @@ function Rodaje() {
       toast.error(`Hoy ya no quedan retratos gratis suficientes (máximo ${slot.max}).`);
       return;
     }
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = beginJob("look");
+    if (!controller) return;
     retake();
     setPlates([]);
     try {
@@ -189,19 +229,19 @@ function Rodaje() {
     } catch (error) {
       setPhase("");
       if (error instanceof DOMException && error.name === "AbortError") return;
-      toast.error(error instanceof Error ? error.message : "No se pudo vestir a la persona.");
+      failJob("look", error, "No se pudo vestir a la persona.");
+    } finally {
+      finishJob("look");
     }
   }
 
   async function makeMovie() {
     if (!film) return;
-    if (
-      !(
-        film.story.trim() ||
-        film.title.trim() ||
-        film.cast.some((actor) => actor.description.trim())
-      )
-    ) {
+    if (!(
+      film.story.trim() ||
+      film.title.trim() ||
+      film.cast.some((actor) => actor.description.trim())
+    )) {
       toast.error("Escribe la historia o describe al menos un personaje.");
       return;
     }
@@ -231,9 +271,8 @@ function Rodaje() {
       toast.error(`Hoy ya creaste ${free.max} planos gratis.`);
       return;
     }
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = beginJob("movie");
+    if (!controller) return;
     retake();
     try {
       const next: FreePlate[] = [];
@@ -258,10 +297,7 @@ function Rodaje() {
         setFromPhoto(true);
       } else {
         const faces = await loadCastFaces(film);
-        const background = await translateBackground(
-          film.story || film.title,
-          controller.signal,
-        );
+        const background = await translateBackground(film.story || film.title, controller.signal);
         const beats = sceneBeats(film, background);
         const seedBase = Date.now() % 100000;
         for (let i = 0; i < beats.length; i++) {
@@ -320,7 +356,9 @@ function Rodaje() {
     } catch (error) {
       setPhase("");
       if (error instanceof DOMException && error.name === "AbortError") return;
-      toast.error(error instanceof Error ? error.message : "No se pudo rodar la película.");
+      failJob("movie", error, "No se pudo rodar la película.");
+    } finally {
+      finishJob("movie");
     }
   }
 
@@ -330,13 +368,11 @@ function Rodaje() {
       toast.error("Activa el interruptor si autorizas enviar el texto del plano.");
       return;
     }
-    if (
-      !(
-        film.story.trim() ||
-        film.title.trim() ||
-        film.cast.some((actor) => actor.description.trim())
-      )
-    ) {
+    if (!(
+      film.story.trim() ||
+      film.title.trim() ||
+      film.cast.some((actor) => actor.description.trim())
+    )) {
       toast.error("Escribe la historia o describe un personaje primero.");
       return;
     }
@@ -345,17 +381,13 @@ function Rodaje() {
       toast.error(`Hoy ya creaste tus ${slot.max} planos gratis.`);
       return;
     }
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = beginJob("still");
+    if (!controller) return;
     retake();
     setPlates([]);
     try {
       const faces = await loadCastFaces(film);
-      const background = await translateBackground(
-        film.story || film.title,
-        controller.signal,
-      );
+      const background = await translateBackground(film.story || film.title, controller.signal);
       const beats = sceneBeats(film, background);
       const seedBase = Date.now() % 100000;
       const next: FreePlate[] = [];
@@ -383,19 +415,25 @@ function Rodaje() {
       setPlates(next);
       setPhase("");
       if (!faces.photos.size) {
-        toast.message("Plano creado. Si subes una foto en Elenco podrás fundir tu cara localmente.");
+        toast.message(
+          "Plano creado. Si subes una foto en Elenco podrás fundir tu cara localmente.",
+        );
       } else {
         toast.success("Plano listo con tu rostro integrado en el dispositivo.");
       }
     } catch (error) {
       setPhase("");
       if (error instanceof DOMException && error.name === "AbortError") return;
-      toast.error(error instanceof Error ? error.message : "No se pudo crear el plano.");
+      failJob("still", error, "No se pudo crear el plano.");
+    } finally {
+      finishJob("still");
     }
   }
 
   async function assemble(current: Film, frames: FreePlate[] = plates) {
     if (!frames.length) return;
+    const internal = jobLock.current === "movie";
+    if (!internal && !beginJob("assemble")) return;
     setPhase("Montando video MP4 en tu dispositivo…");
     retake();
     try {
@@ -420,16 +458,22 @@ function Rodaje() {
       toast.success("Montaje local listo.");
     } catch (error) {
       setPhase("");
-      toast.error(error instanceof Error ? error.message : "No se pudo armar el video.");
+      failJob("assemble", error, "No se pudo armar el video.");
+    } finally {
+      if (!internal) finishJob("assemble");
     }
   }
 
   async function keep(current: Film) {
     if (!clip) return;
     const safe = safeFilename(current.title, "mi-universo");
+    setSaveStatus("idle");
     try {
       await shareOrSave(clip, `${safe}-estudio.mp4`);
-    } catch {
+      setSaveStatus("success");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSaveStatus("error");
       toast.error("No se pudo descargar el archivo en este navegador.");
     }
   }
@@ -437,7 +481,7 @@ function Rodaje() {
   const hasFace = plates.some((plate) => plate.face);
 
   return (
-    <Shell>
+    <>
       <div className="space-y-6">
         {/* Header & Daily Studio Quotas */}
         <header className="studio-card p-5 sm:p-6">
@@ -447,12 +491,10 @@ function Rodaje() {
                 <Clapperboard size={14} />
                 SET DE RODAJE · CABINA PRINCIPAL
               </p>
-              <h1 className="mt-2 text-3xl sm:text-4xl">
-                {film.title || "Película sin título"}
-              </h1>
+              <h1 className="mt-2 text-3xl sm:text-4xl">{film.title || "Película sin título"}</h1>
               <p className="mt-2 max-w-xl text-sm text-muted">
-                Elige entre el Proyector 100% Local (cero red, instantáneo) o la Cabina IA Sin
-                Cuota con consentimiento explícito para trajes fotorrealistas y animación.
+                Elige entre el Proyector 100% Local (cero red, instantáneo) o la Cabina IA Sin Cuota
+                con consentimiento explícito para trajes fotorrealistas y animación.
               </p>
             </div>
 
@@ -484,25 +526,50 @@ function Rodaje() {
                 <Users size={15} className="text-brass" />
                 Aún no tienes actores en esta película. Suma rostros o leyendas para personalizarla.
               </span>
-              <Link to="/elenco" className="font-semibold text-brass underline">
+              <Link
+                to="/elenco"
+                className="inline-flex min-h-11 items-center font-semibold text-brass underline"
+              >
                 Ir a Elenco →
               </Link>
             </div>
           ) : null}
         </header>
 
-        {/* Active Progress Banner */}
-        {phase ? (
-          <div className="studio-card flex items-center justify-between gap-3 border-brass/60 px-4 py-3">
-            <span className="flex items-center gap-2.5 text-sm font-medium text-brass">
-              <span className="pulse-live inline-block size-2.5 rounded-full bg-brass" />
-              {phase}
-            </span>
-            <Button variant="quiet" onClick={cancelActiveJob} className="min-h-9 px-3 text-xs">
-              <XCircle size={14} />
-              Cancelar
-            </Button>
-          </div>
+        <div aria-live="polite" aria-atomic="true" role="status">
+          {activeJob ? (
+            <div
+              className="studio-card mb-4 flex items-center justify-between gap-3 border-brass/60 px-4 py-3"
+              aria-busy="true"
+            >
+              <span className="flex items-center gap-2.5 text-sm font-medium text-brass">
+                <LoaderCircle size={17} className="loading-spinner shrink-0" aria-hidden="true" />
+                {phase || "Preparando la operación…"}
+              </span>
+              {activeJob !== "assemble" && !phase.startsWith("Montando") ? (
+                <Button
+                  variant="quiet"
+                  size="compact"
+                  loading={cancelling}
+                  loadingLabel="Cancelando…"
+                  onClick={cancelActiveJob}
+                >
+                  <XCircle size={14} />
+                  Cancelar
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {jobError ? (
+          <p
+            id="rodaje-error"
+            role="alert"
+            className="studio-card flex items-start gap-2 border-crimson/50 p-4 text-sm text-crimson"
+          >
+            <TriangleAlert size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
+            {jobError} Puedes volver a intentarlo.
+          </p>
         ) : null}
 
         {/* Section 1: Proyector Local Instantáneo (100% On-Device) */}
@@ -524,6 +591,7 @@ function Rodaje() {
               <div>
                 <p className="mb-2 text-xs font-medium text-muted">Duración del corte</p>
                 <ChoiceRow
+                  label="Duración del corte"
                   value={film.duration}
                   onChange={(duration: Duration) => setDuration(duration)}
                   options={(Object.keys(DURATION_LABEL) as Duration[]).map((id) => ({
@@ -565,9 +633,9 @@ function Rodaje() {
             </p>
             <h2 className="text-2xl sm:text-3xl">Laboratorio de Trajes y Video IA Gratis</h2>
             <p className="max-w-2xl text-xs leading-relaxed text-muted sm:text-sm">
-              Genera fondos ilustrados (cacheando traducciones y fotogramas durante 24h) o viste
-              tu foto con modelos públicos gratuitos. Tus datos solo salen si activas los
-              interruptores de abajo.
+              Genera fondos ilustrados (cacheando traducciones y fotogramas durante 24h) o viste tu
+              foto con modelos públicos gratuitos. Tus datos solo salen si activas los interruptores
+              de abajo.
             </p>
           </div>
 
@@ -589,22 +657,53 @@ function Rodaje() {
           </div>
 
           <div className="flex flex-wrap gap-2.5">
-            <Button onClick={() => void makeMovie()} disabled={Boolean(phase)}>
+            <Button
+              onClick={() => makeMovie()}
+              loading={activeJob === "movie"}
+              loadingLabel="Rodando película…"
+              disabled={Boolean(activeJob && activeJob !== "movie")}
+              status={failedJob === "movie" ? "error" : "idle"}
+              errorLabel="Reintentar película"
+              aria-describedby={failedJob === "movie" ? "rodaje-error" : undefined}
+            >
               <FilmIcon size={16} />
               Hacer la película (1 paso)
             </Button>
-            <Button variant="quiet" onClick={() => void shoot()} disabled={Boolean(phase)}>
+            <Button
+              variant="quiet"
+              onClick={() => shoot()}
+              loading={activeJob === "still"}
+              loadingLabel="Creando plano…"
+              disabled={Boolean(activeJob && activeJob !== "still")}
+              status={failedJob === "still" ? "error" : "idle"}
+              errorLabel="Reintentar plano"
+              aria-describedby={failedJob === "still" ? "rodaje-error" : undefined}
+            >
               <Sparkles size={15} className="text-brass" />
               Crear plano gratis (rostro local)
             </Button>
-            <Button variant="quiet" onClick={() => void lookReal()} disabled={Boolean(phase)}>
+            <Button
+              variant="quiet"
+              onClick={() => lookReal()}
+              loading={activeJob === "look"}
+              loadingLabel="Vistiendo elenco…"
+              disabled={Boolean(activeJob && activeJob !== "look")}
+              status={failedJob === "look" ? "error" : "idle"}
+              errorLabel="Reintentar vestuario"
+              aria-describedby={failedJob === "look" ? "rodaje-error" : undefined}
+            >
               <WandSparkles size={15} className="text-cyan" />
               Vestir con mi cara
             </Button>
             <Button
               variant="crimson"
-              onClick={() => void animate()}
-              disabled={Boolean(phase) || !plates.length}
+              onClick={() => animate()}
+              loading={activeJob === "animate"}
+              loadingLabel="Animando plano…"
+              status={failedJob === "animate" ? "error" : "idle"}
+              errorLabel="Reintentar animación"
+              aria-describedby={failedJob === "animate" ? "rodaje-error" : undefined}
+              disabled={Boolean(activeJob && activeJob !== "animate") || !plates.length}
             >
               <Clapperboard size={15} />
               Animar el plano
@@ -640,7 +739,7 @@ function Rodaje() {
                           retake();
                           setNudge(ZERO);
                         }}
-                        className="inline-flex items-center gap-1 text-xs text-brass hover:underline"
+                        className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-brass hover:underline"
                       >
                         <RotateCcw size={12} />
                         Centrar
@@ -681,8 +780,13 @@ function Rodaje() {
 
                 <Button
                   variant="quiet"
-                  onClick={() => void assemble(film)}
-                  disabled={Boolean(phase)}
+                  onClick={() => assemble(film)}
+                  loading={activeJob === "assemble"}
+                  loadingLabel="Montando MP4…"
+                  status={failedJob === "assemble" ? "error" : "idle"}
+                  errorLabel="Reintentar montaje"
+                  aria-describedby={failedJob === "assemble" ? "rodaje-error" : undefined}
+                  disabled={Boolean(activeJob && activeJob !== "assemble")}
                   className="w-full"
                 >
                   Armar video MP4 de este plano en el teléfono
@@ -698,7 +802,11 @@ function Rodaje() {
                     />
                     <Button
                       variant="primary"
-                      onClick={() => void keep(film)}
+                      onClick={() => keep(film)}
+                      status={saveStatus}
+                      successLabel="Video guardado"
+                      errorLabel="Reintentar descarga"
+                      loadingLabel="Preparando descarga…"
                       className="w-full"
                     >
                       <Download size={16} />
@@ -711,7 +819,7 @@ function Rodaje() {
           ) : null}
         </section>
       </div>
-    </Shell>
+    </>
   );
 }
 
