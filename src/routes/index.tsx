@@ -16,10 +16,13 @@ import {
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ActorAvatarCanvas } from "@/components/actor-avatar-canvas";
-import { Shell } from "@/components/shell";
 import { Stage } from "@/components/stage";
+import { Combobox } from "@/components/ui/combobox";
+import { HorizontalScroll } from "@/components/ui/horizontal-scroll";
+import { SwipeActions } from "@/components/ui/swipe-actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { normalizeSearch } from "@/lib/ui/gestures";
 import { direct, totalDuration } from "@/lib/studio/director";
 import { TONE_META } from "@/lib/studio/presets";
 import { useStudio } from "@/lib/studio/store";
@@ -44,32 +47,26 @@ function Home() {
   );
 
   const filteredFilms = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("es");
+    const q = normalizeSearch(search);
     return films.filter((f) => {
       if (toneFilter !== "all" && f.tone !== toneFilter) return false;
       if (!q) return true;
       return (
-        f.title.toLocaleLowerCase("es").includes(q) ||
-        f.story.toLocaleLowerCase("es").includes(q) ||
-        f.cast.some((c) => c.name.toLocaleLowerCase("es").includes(q))
+        normalizeSearch(f.title).includes(q) ||
+        normalizeSearch(f.story).includes(q) ||
+        f.cast.some((c) => normalizeSearch(c.name).includes(q))
       );
     });
   }, [films, toneFilter, search]);
 
-  const activeScenes = useMemo(
-    () => (activeFilm ? direct(activeFilm) : []),
-    [activeFilm],
-  );
-  const activeSeconds = useMemo(
-    () => Math.round(totalDuration(activeScenes)),
-    [activeScenes],
-  );
+  const activeScenes = useMemo(() => (activeFilm ? direct(activeFilm) : []), [activeFilm]);
+  const activeSeconds = useMemo(() => Math.round(totalDuration(activeScenes)), [activeScenes]);
 
   const hasCast = (activeFilm?.cast.length ?? 0) > 0;
   const hasStory = Boolean(activeFilm?.story.trim());
 
   return (
-    <Shell>
+    <>
       <div className="space-y-8">
         {/* Hero Cinema Marquee */}
         <section className="studio-card relative overflow-hidden p-5 sm:p-7">
@@ -97,16 +94,13 @@ function Home() {
               <div className="grid gap-2.5 sm:grid-cols-3">
                 <Link
                   to="/elenco"
-                  className="group rounded-2xl border border-line bg-panel-2/70 p-3 transition-all hover:border-brass/55 hover:bg-panel-2"
+                  className="group card-hover rounded-2xl border border-line bg-panel-2/70 p-3 transition-all hover:border-brass/55 hover:bg-panel-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="inline-flex size-7 items-center justify-center rounded-lg bg-amber-400/15 text-brass">
                       <Users size={15} />
                     </span>
-                    <CheckCircle2
-                      size={15}
-                      className={hasCast ? "text-emerald" : "text-line"}
-                    />
+                    <CheckCircle2 size={15} className={hasCast ? "text-emerald" : "text-line"} />
                   </div>
                   <p className="mt-2 text-sm font-semibold text-paper group-hover:text-brass">
                     1. Elenco y Forja
@@ -118,16 +112,13 @@ function Home() {
 
                 <Link
                   to="/historia"
-                  className="group rounded-2xl border border-line bg-panel-2/70 p-3 transition-all hover:border-crimson/55 hover:bg-panel-2"
+                  className="group card-hover rounded-2xl border border-line bg-panel-2/70 p-3 transition-all hover:border-crimson/55 hover:bg-panel-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="inline-flex size-7 items-center justify-center rounded-lg bg-rose-500/15 text-crimson">
                       <ScrollText size={15} />
                     </span>
-                    <CheckCircle2
-                      size={15}
-                      className={hasStory ? "text-emerald" : "text-line"}
-                    />
+                    <CheckCircle2 size={15} className={hasStory ? "text-emerald" : "text-line"} />
                   </div>
                   <p className="mt-2 text-sm font-semibold text-paper group-hover:text-crimson">
                     2. Guion y Planos
@@ -139,7 +130,7 @@ function Home() {
 
                 <Link
                   to="/rodaje"
-                  className="group rounded-2xl border border-line bg-panel-2/70 p-3 transition-all hover:border-cyan/55 hover:bg-panel-2"
+                  className="group card-hover rounded-2xl border border-line bg-panel-2/70 p-3 transition-all hover:border-cyan/55 hover:bg-panel-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="inline-flex size-7 items-center justify-center rounded-lg bg-cyan-400/15 text-cyan">
@@ -157,17 +148,11 @@ function Home() {
               </div>
 
               <div className="flex flex-wrap gap-2.5 pt-1">
-                <Link
-                  to="/rodaje"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full bg-gradient-to-r from-amber-300 via-brass to-amber-500 px-6 text-sm font-semibold text-ink shadow-[0_6px_22px_-6px_rgba(245,184,75,0.65)] transition-transform hover:brightness-105 active:scale-[0.97]"
-                >
+                <Link to="/rodaje" className="control control-primary px-6">
                   <Clapperboard size={16} />
                   Entrar al Set de Rodaje
                 </Link>
-                <Link
-                  to="/forja"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line bg-panel-2/90 px-5 text-sm font-medium text-paper transition-colors hover:border-brass/50"
-                >
+                <Link to="/forja" className="control control-quiet">
                   <WandSparkles size={16} className="text-brass" />
                   Forjar personaje
                 </Link>
@@ -195,18 +180,23 @@ function Home() {
               </div>
               <Link
                 to="/elenco"
-                className="text-xs font-medium text-brass underline decoration-brass/40 underline-offset-4 hover:text-amber-200"
+                className="inline-flex min-h-11 items-center text-xs font-medium text-brass underline decoration-brass/40 underline-offset-4 hover:text-amber-200"
               >
                 Editar reparto
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            <HorizontalScroll
+              as="ul"
+              label="Reparto de la producción activa"
+              className="card-carousel sm:grid-cols-3 md:grid-cols-4"
+              hint
+            >
               {activeFilm.cast.map((actor) => (
                 <Link
                   key={actor.id}
                   to={actor.forged ? "/forja" : "/elenco"}
-                  className="studio-card group p-2.5 transition-transform hover:-translate-y-0.5"
+                  className="studio-card card-hover group block p-2.5"
                 >
                   {actor.portrait ? (
                     <img
@@ -222,7 +212,7 @@ function Home() {
                   </p>
                 </Link>
               ))}
-            </div>
+            </HorizontalScroll>
           </section>
         ) : null}
 
@@ -256,8 +246,8 @@ function Home() {
             </span>
             <h2 className="mt-3 text-xl">3. Dirección Automática</h2>
             <p className="mt-1.5 text-xs leading-relaxed text-muted">
-              Cada frase de tu historia elige escenario, iluminación, encuadre y música ambiental
-              de sintetizador cinematográfico.
+              Cada frase de tu historia elige escenario, iluminación, encuadre y música ambiental de
+              sintetizador cinematográfico.
             </p>
           </article>
         </section>
@@ -282,133 +272,160 @@ function Home() {
             </Button>
           </div>
 
-          {/* Search & Tone Filter Bar */}
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-1.5">
-              {(["all", "epico", "intimo", "oscuro", "luminoso"] as const).map((tone) => {
-                const active = toneFilter === tone;
-                const label = tone === "all" ? "Todas" : TONE_META[tone].label;
-                return (
-                  <button
-                    key={tone}
-                    type="button"
-                    onClick={() => setToneFilter(tone)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                      active
-                        ? "border-brass bg-brass text-ink"
-                        : "border-line bg-panel-2/70 text-muted hover:text-paper",
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+          <Combobox
+            label="Producción en el set"
+            value={activeId}
+            onChange={setActive}
+            options={films.map((item) => ({
+              value: item.id,
+              label: item.title || "Película sin título",
+              description: `${TONE_META[item.tone].label} · ${item.cast.length} personajes`,
+              keywords: item.cast.map((actor) => actor.name).join(" "),
+            }))}
+            placeholder="Buscar una producción…"
+            emptyText="No hay producciones con ese nombre o personaje."
+            className="sm:max-w-sm"
+          />
 
-            <div className="relative sm:w-64">
-              <Search
-                size={14}
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted"
-              />
-              <input
-                type="search"
-                placeholder="Buscar título o personaje…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="field min-h-9 py-1.5 pl-8 text-xs"
-              />
+          {/* Native, keyboard-accessible tone chips; scrolling never selects a chip. */}
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between">
+            <HorizontalScroll label="Filtros de tono" className="gap-1.5" selectionKey={toneFilter}>
+              {(["all", "epico", "intimo", "oscuro", "luminoso"] as const).map((tone) => (
+                <button
+                  key={tone}
+                  type="button"
+                  aria-pressed={toneFilter === tone}
+                  onClick={() => setToneFilter(tone)}
+                  className="chip"
+                >
+                  {toneFilter === tone ? <CheckCircle2 size={13} aria-hidden="true" /> : null}
+                  {tone === "all" ? "Todas" : TONE_META[tone].label}
+                </button>
+              ))}
+            </HorizontalScroll>
+            <div className="sm:w-64">
+              <label htmlFor="film-search" className="mb-1.5 block text-xs font-medium text-muted">
+                Buscar en la cartelera
+              </label>
+              <div className="relative">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted"
+                  aria-hidden="true"
+                />
+                <input
+                  id="film-search"
+                  type="search"
+                  autoComplete="off"
+                  enterKeyHint="search"
+                  placeholder="Título, historia o personaje…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="field pl-9 text-xs"
+                />
+              </div>
             </div>
           </div>
+          <p role="status" aria-live="polite" className="text-xs text-muted">
+            {filteredFilms.length}{" "}
+            {filteredFilms.length === 1 ? "producción encontrada" : "producciones encontradas"}
+          </p>
 
-          {/* Poster Cards */}
+          {/* Cards retain visible desktop actions and a named toggle on touch. */}
           <ul className="grid gap-3.5 sm:grid-cols-2">
             {filteredFilms.map((film) => {
               const isOpen = film.id === activeId;
               const meta = TONE_META[film.tone];
+              const title = film.title || "Película sin título";
+              const actions = (
+                <>
+                  <Button
+                    variant="quiet"
+                    size="compact"
+                    aria-label={`Duplicar ${title}`}
+                    onClick={() => {
+                      duplicateFilm(film.id);
+                      toast.success("Copia creada en la cartelera.");
+                    }}
+                  >
+                    <Copy size={14} aria-hidden="true" />
+                    Duplicar
+                  </Button>
+                  {films.length > 1 ? (
+                    <Button
+                      variant="ghost"
+                      size="compact"
+                      className="text-crimson"
+                      aria-label={`Eliminar ${title}`}
+                      onClick={() => {
+                        removeFilm(film.id);
+                        toast.message("Producción eliminada del archivo local.");
+                      }}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                      Quitar
+                    </Button>
+                  ) : null}
+                </>
+              );
               return (
-                <li
-                  key={film.id}
-                  className={cn(
-                    "studio-card relative overflow-hidden p-4 transition-all",
-                    isOpen && `border-brass/70 ${meta.glow}`,
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b opacity-80",
-                      meta.gradient,
-                    )}
-                  />
-                  <div className="relative space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setActive(film.id)}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-brass uppercase">
-                          {meta.badge}
-                          {isOpen ? (
-                            <span className="rounded-full bg-emerald/20 px-2 py-0.5 text-[10px] text-emerald">
-                              EN SET
-                            </span>
-                          ) : null}
+                <li key={film.id} className="min-w-0" aria-current={isOpen ? "true" : undefined}>
+                  <SwipeActions
+                    label={title}
+                    actions={actions}
+                    className={cn("studio-card h-full", isOpen && `border-brass/70 ${meta.glow}`)}
+                  >
+                    <div className="relative space-y-3 p-4 pr-14 md:pr-4">
+                      <div
+                        className={cn(
+                          "pointer-events-none absolute inset-x-0 top-0 h-20 rounded-t-card bg-gradient-to-b opacity-80",
+                          meta.gradient,
+                        )}
+                      />
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setActive(film.id)}
+                          aria-pressed={isOpen}
+                          aria-label={`${isOpen ? "En el set" : "Abrir producción"}: ${title}`}
+                          className="min-h-11 min-w-0 w-full rounded-lg text-left"
+                        >
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-brass uppercase">
+                            {meta.badge}
+                            {isOpen ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald/20 px-2 py-0.5 text-[10px] text-emerald">
+                                <CheckCircle2 size={11} aria-hidden="true" />
+                                EN SET
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="mt-1 block truncate font-display text-2xl text-paper">
+                            {title}
+                          </span>
+                        </button>
+                      </div>
+                      <p className="line-clamp-2 min-h-9 text-xs text-muted">
+                        {film.story.trim() ||
+                          "Guion en blanco — escribe qué ocurre en la pestaña Guion."}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-3 text-xs">
+                        <span className="text-muted">
+                          {film.cast.length} {film.cast.length === 1 ? "actor" : "actores"} ·{" "}
+                          {DURATION_LABEL[film.duration]}
                         </span>
-                        <span className="mt-1 block truncate font-display text-2xl text-paper">
-                          {film.title || "Película sin título"}
-                        </span>
-                      </button>
-                    </div>
-
-                    <p className="line-clamp-2 min-h-9 text-xs text-muted">
-                      {film.story.trim() ||
-                        "Guion en blanco — escribe qué ocurre en la pestaña Guion."}
-                    </p>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-3 text-xs">
-                      <span className="text-muted">
-                        {film.cast.length} {film.cast.length === 1 ? "actor" : "actores"} ·{" "}
-                        {DURATION_LABEL[film.duration]}
-                      </span>
-
-                      <div className="flex items-center gap-1">
                         {!isOpen ? (
                           <Button
                             variant="quiet"
+                            size="compact"
                             onClick={() => setActive(film.id)}
-                            className="min-h-8 px-3 text-xs"
+                            aria-label={`Abrir ${title}`}
                           >
                             Abrir
                           </Button>
                         ) : null}
-                        <button
-                          type="button"
-                          title="Duplicar producción"
-                          onClick={() => {
-                            duplicateFilm(film.id);
-                            toast.success("Copia creada en la cartelera.");
-                          }}
-                          className="rounded-full p-2 text-muted transition-colors hover:bg-panel-2 hover:text-paper"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        {films.length > 1 ? (
-                          <button
-                            type="button"
-                            title="Eliminar producción"
-                            onClick={() => {
-                              removeFilm(film.id);
-                              toast.message("Producción eliminada del archivo local.");
-                            }}
-                            className="rounded-full p-2 text-muted transition-colors hover:bg-panel-2 hover:text-crimson"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        ) : null}
                       </div>
                     </div>
-                  </div>
+                  </SwipeActions>
                 </li>
               );
             })}
@@ -422,20 +439,24 @@ function Home() {
         </section>
 
         <footer className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line/70 bg-panel/70 px-4 py-3 text-xs text-muted">
-          <span>
-            Tus rostros nunca salen sin activar expresamente el interruptor de envío.
-          </span>
+          <span>Tus rostros nunca salen sin activar expresamente el interruptor de envío.</span>
           <span className="flex items-center gap-3 font-medium">
-            <Link to="/privacidad" className="text-brass hover:underline">
+            <Link
+              to="/privacidad"
+              className="inline-flex min-h-11 items-center text-brass hover:underline"
+            >
               Política de Privacidad y Derechos ARCO
             </Link>
             <span>·</span>
-            <Link to="/instalar" className="text-paper hover:underline">
+            <Link
+              to="/instalar"
+              className="inline-flex min-h-11 items-center text-paper hover:underline"
+            >
               Instalar App
             </Link>
           </span>
         </footer>
       </div>
-    </Shell>
+    </>
   );
 }

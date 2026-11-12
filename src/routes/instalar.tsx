@@ -1,48 +1,57 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Copy, Share, Smartphone, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Shell } from "@/components/shell";
-import { Button } from "@/components/ui/button";
+import { Button, type ActionStatus } from "@/components/ui/button";
 
 export const Route = createFileRoute("/instalar")({ component: Instalar });
 
 function Instalar() {
   const [qr, setQr] = useState("");
   const [url, setUrl] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<ActionStatus>("idle");
+  const [qrError, setQrError] = useState("");
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const installUrl = `${window.location.origin}/?install=1&platform=ios`;
     setUrl(installUrl);
     let alive = true;
-    void import("qrcode").then(async (QR) => {
-      const data = await QR.toDataURL(installUrl, {
-        margin: 2,
-        width: 280,
-        color: { dark: "#0d0b14", light: "#faf5eb" },
+    void import("qrcode")
+      .then(async (QR) => {
+        const data = await QR.toDataURL(installUrl, {
+          margin: 2,
+          width: 280,
+          color: { dark: "#0d0b14", light: "#faf5eb" },
+        });
+        if (alive) setQr(data);
+      })
+      .catch(() => {
+        if (alive) setQrError("No se pudo generar el QR. Puedes copiar el enlace de abajo.");
       });
-      if (alive) setQr(data);
-    });
     return () => {
       alive = false;
+      if (resetTimer.current) clearTimeout(resetTimer.current);
     };
   }, []);
 
   async function copyInstallUrl() {
     if (!url) return;
+    setStatus("idle");
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
+      setStatus("success");
       toast.success("Enlace copiado al portapapeles.");
-      setTimeout(() => setCopied(false), 2000);
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setStatus("idle"), 2000);
     } catch {
-      toast.error("No se pudo copiar automáticamente.");
+      setStatus("error");
+      toast.error("No se pudo copiar automáticamente. Selecciona el enlace y cópialo manualmente.");
     }
   }
 
   return (
-    <Shell>
+    <>
       <div className="space-y-6">
         <header className="studio-card p-5 sm:p-6">
           <p className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-widest text-brass uppercase">
@@ -63,7 +72,9 @@ function Instalar() {
                 1
               </span>
               <div>
-                <p className="font-semibold">Abre el enlace en Safari (iPhone) o Chrome (Android)</p>
+                <p className="font-semibold">
+                  Abre el enlace en Safari (iPhone) o Chrome (Android)
+                </p>
                 <p className="mt-0.5 text-xs text-muted">
                   Escanea el boleto QR o copia el enlace directo de instalación.
                 </p>
@@ -121,8 +132,11 @@ function Instalar() {
                 className="w-52 rounded-2xl border-2 border-brass/50 shadow-lg"
               />
             ) : (
-              <div className="flex size-52 items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs text-muted">
-                Generando código QR…
+              <div
+                role="status"
+                className="flex size-52 items-center justify-center rounded-2xl border border-line bg-panel-2 p-4 text-xs text-muted"
+              >
+                {qrError || "Generando código QR…"}
               </div>
             )}
             {url ? (
@@ -130,16 +144,34 @@ function Instalar() {
                 <p className="break-all rounded-xl border border-line bg-ink/70 px-3 py-2 font-mono text-[11px] text-muted">
                   {url}
                 </p>
-                <Button variant="quiet" onClick={() => void copyInstallUrl()} className="w-full">
-                  {copied ? <Check size={15} className="text-emerald" /> : <Copy size={15} />}
-                  {copied ? "Enlace copiado" : "Copiar enlace"}
+                <Button
+                  variant="quiet"
+                  onClick={copyInstallUrl}
+                  loadingLabel="Copiando…"
+                  status={status}
+                  successLabel="Enlace copiado"
+                  errorLabel="Reintentar copia"
+                  aria-describedby={status === "error" ? "copy-error" : undefined}
+                  className="w-full"
+                >
+                  {status === "success" ? (
+                    <Check size={15} className="text-emerald" />
+                  ) : (
+                    <Copy size={15} />
+                  )}
+                  Copiar enlace
                 </Button>
+                {status === "error" ? (
+                  <p id="copy-error" role="alert" className="text-xs text-crimson">
+                    Selecciona el enlace de arriba y usa la opción Copiar de tu dispositivo.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div className="film-sprocket w-full opacity-75" />
           </div>
         </div>
       </div>
-    </Shell>
+    </>
   );
 }

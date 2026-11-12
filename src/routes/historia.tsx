@@ -1,17 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Clapperboard, Film as FilmIcon, ScrollText, Sparkles, UserPlus } from "lucide-react";
-import { useMemo } from "react";
+import {
+  Check,
+  Clapperboard,
+  Film as FilmIcon,
+  ScrollText,
+  Sparkles,
+  UserPlus,
+} from "lucide-react";
+import { useId, useMemo } from "react";
 import { toast } from "sonner";
 import { ChoiceRow } from "@/components/role-chips";
-import { Shell } from "@/components/shell";
+import { HorizontalScroll } from "@/components/ui/horizontal-scroll";
 import { cn } from "@/lib/cn";
 import { direct } from "@/lib/studio/director";
-import {
-  MOTION_LABEL,
-  PLACE_META,
-  STORY_TEMPLATES,
-  TONE_META,
-} from "@/lib/studio/presets";
+import { MOTION_LABEL, PLACE_META, STORY_TEMPLATES, TONE_META } from "@/lib/studio/presets";
 import { useStudio } from "@/lib/studio/store";
 import { TONE_LABEL, type Tone } from "@/lib/studio/types";
 
@@ -25,6 +27,7 @@ const SCENE_SPARKS = [
 ];
 
 function Historia() {
+  const id = useId();
   const film = useStudio((s) => s.films.find((item) => item.id === s.activeId));
   const setTitle = useStudio((s) => s.setTitle);
   const setStory = useStudio((s) => s.setStory);
@@ -44,7 +47,7 @@ function Historia() {
   }
 
   return (
-    <Shell>
+    <>
       <div className="space-y-6">
         <header className="studio-card p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -59,10 +62,7 @@ function Historia() {
                 nombras a alguien de tu elenco, la cámara lo enfoca automáticamente.
               </p>
             </div>
-            <Link
-              to="/rodaje"
-              className="inline-flex min-h-10 items-center gap-2 rounded-full bg-gradient-to-r from-amber-300 via-brass to-amber-500 px-4 text-xs font-semibold text-ink shadow"
-            >
+            <Link to="/rodaje" className="control control-primary control-compact">
               <Clapperboard size={14} />
               Llevar a Rodaje
             </Link>
@@ -74,44 +74,68 @@ function Historia() {
           <p className="text-xs font-semibold tracking-wider text-muted uppercase">
             Plantillas cinematográficas (adaptadas a tu elenco):
           </p>
-          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-            {STORY_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                type="button"
-                onClick={() => {
-                  setTitle(tpl.title);
-                  setTone(tpl.tone);
-                  setStory(tpl.build(film.cast));
-                  toast.success(`Guion «${tpl.label}» cargado en escena.`);
-                }}
-                className="studio-card group p-3.5 text-left transition-all hover:border-brass/60"
-              >
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brass">
-                  <Sparkles size={12} />
-                  {TONE_LABEL[tpl.tone]}
-                </span>
-                <p className="mt-1 font-display text-base font-semibold text-paper group-hover:text-brass">
-                  {tpl.label}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-muted">{tpl.title}</p>
-              </button>
-            ))}
-          </div>
+          <HorizontalScroll
+            label="Plantillas cinematográficas"
+            className="card-carousel lg:grid-cols-4"
+            hint
+          >
+            {STORY_TEMPLATES.map((tpl) => {
+              const selected =
+                film.title === tpl.title &&
+                film.tone === tpl.tone &&
+                film.story === tpl.build(film.cast);
+              return (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`Cargar plantilla ${tpl.label}`}
+                  onClick={() => {
+                    setTitle(tpl.title);
+                    setTone(tpl.tone);
+                    setStory(tpl.build(film.cast));
+                    toast.success(`Guion «${tpl.label}» cargado en escena.`);
+                  }}
+                  className={cn(
+                    "studio-card card-hover group min-h-24 p-3.5 text-left",
+                    selected && "border-brass/70",
+                  )}
+                >
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brass">
+                    <Sparkles size={12} />
+                    {TONE_LABEL[tpl.tone]}
+                  </span>
+                  <p className="mt-1 font-display text-base font-semibold text-paper group-hover:text-brass">
+                    {tpl.label}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted">{tpl.title}</p>
+                  {selected ? (
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs text-emerald">
+                      <Check size={12} aria-hidden="true" />
+                      En escena
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </HorizontalScroll>
         </section>
 
         {/* Main Script Editor */}
         <section className="studio-card space-y-4 p-5 sm:p-6">
-          <label className="block text-xs font-medium text-muted">
-            Título de la película
+          <div>
+            <label htmlFor={`${id}-title`} className="block text-xs font-medium text-muted">
+              Título de la película
+            </label>
             <input
+              id={`${id}-title`}
               className="field mt-1.5 font-display text-lg"
               maxLength={100}
               placeholder="Ej. Amanecer en la azotea"
               value={film.title}
               onChange={(event) => setTitle(event.target.value)}
             />
-          </label>
+          </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -119,6 +143,7 @@ function Historia() {
               <span className="text-xs text-brass">{toneMeta.subtitle}</span>
             </div>
             <ChoiceRow
+              label="Atmósfera y tono visual"
               columns={4}
               value={film.tone}
               onChange={(tone: Tone) => setTone(tone)}
@@ -134,13 +159,13 @@ function Historia() {
             <p className="text-xs font-medium text-muted">
               Toca un personaje o chispa escénica para insertarlo en el guion:
             </p>
-            <div className="flex flex-wrap gap-1.5">
+            <HorizontalScroll label="Personajes y chispas para insertar en el guion">
               {film.cast.map((actor) => (
                 <button
                   key={actor.id}
                   type="button"
                   onClick={() => insertSnippet(`${actor.name} entra en escena.`)}
-                  className="inline-flex items-center gap-1 rounded-full border border-brass/40 bg-brass/12 px-3 py-1 text-xs font-medium text-brass hover:bg-brass/20"
+                  className="chip border-brass/40 bg-brass/12 text-brass"
                 >
                   <UserPlus size={12} />
                   {actor.name}
@@ -151,24 +176,27 @@ function Historia() {
                   key={spark}
                   type="button"
                   onClick={() => insertSnippet(spark)}
-                  className="rounded-full border border-line bg-panel-2/80 px-3 py-1 text-xs text-muted hover:border-cyan/50 hover:text-cyan"
+                  className="chip"
                 >
                   + {spark}
                 </button>
               ))}
-            </div>
+            </HorizontalScroll>
           </div>
 
-          <label className="block text-xs font-medium text-muted">
-            Guion escena por escena ({film.story.length}/2400 caracteres)
+          <div>
+            <label htmlFor={`${id}-story`} className="block text-xs font-medium text-muted">
+              Guion escena por escena ({film.story.length}/2400 caracteres)
+            </label>
             <textarea
+              id={`${id}-story`}
               className="field mt-1.5 min-h-52 text-sm leading-relaxed"
               maxLength={2400}
               value={film.story}
               placeholder="En la azotea, Ana abre los ojos. Bruno sale de la sombra. Los dos chocan. Al final, el horizonte se queda en calma."
               onChange={(event) => setStory(event.target.value)}
             />
-          </label>
+          </div>
         </section>
 
         {/* Live Storyboard Strip */}
@@ -178,11 +206,18 @@ function Historia() {
               <p className="text-xs font-semibold tracking-wider text-cyan uppercase">
                 Desglose del Director en Tiempo Real
               </p>
-              <h2 className="text-2xl text-paper">Storyboard automático ({scenes.length} planos)</h2>
+              <h2 className="text-2xl text-paper">
+                Storyboard automático ({scenes.length} planos)
+              </h2>
             </div>
           </div>
 
-          <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <HorizontalScroll
+            as="ol"
+            label="Planos del storyboard automático"
+            className="card-carousel lg:grid-cols-3"
+            hint
+          >
             {scenes.map((scene, index) => {
               const place = PLACE_META[scene.place];
               const featuredNames = scene.focusIds
@@ -222,9 +257,9 @@ function Historia() {
                 </li>
               );
             })}
-          </ol>
+          </HorizontalScroll>
         </section>
       </div>
-    </Shell>
+    </>
   );
 }
