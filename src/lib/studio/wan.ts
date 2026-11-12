@@ -1,4 +1,5 @@
-import { gradioEvents } from "./gradio-events";
+import { gradioEvents } from "./gradio-events.ts";
+import { bumpDailyAllowance, readDailyAllowance, validateGradioMediaUrl } from "./security.ts";
 
 const SPACE = "https://cbensimon-wan2-2-fp8da-aoti-preview2.hf.space";
 
@@ -6,25 +7,34 @@ const NEGATIVE =
   "static, blurry, watermark, text, logo, extra fingers, deformed face, frozen frame, low quality";
 
 export function wanAllowance(): { key: string; used: number; max: number; ok: boolean } {
-  const max = 2;
-  const key = `miuniverso-wan-${new Date().toISOString().slice(0, 10)}`;
-  const used = Number(localStorage.getItem(key) ?? "0") || 0;
-  return { key, used, max, ok: used < max };
+  return readDailyAllowance("wan", 2);
 }
 
 export function bumpWan(key: string) {
-  const used = Number(localStorage.getItem(key) ?? "0") || 0;
-  localStorage.setItem(key, String(used + 1));
+  bumpDailyAllowance(key);
 }
 
-export async function animateStill(image: Blob, signal: AbortSignal, motion?: string): Promise<string> {
+export async function animateStill(
+  image: Blob,
+  signal: AbortSignal,
+  motion?: string,
+): Promise<string> {
   const form = new FormData();
   form.append("files", image, "plano.jpg");
-  const uploaded = await fetch(`${SPACE}/gradio_api/upload`, { method: "POST", body: form, signal });
-  if (!uploaded.ok) throw new Error("El modelo gratis no pudo recibir la imagen. Prueba más tarde.");
+  const uploaded = await fetch(`${SPACE}/gradio_api/upload`, {
+    method: "POST",
+    referrerPolicy: "no-referrer",
+    body: form,
+    signal,
+  });
+  if (!uploaded.ok) {
+    throw new Error("El modelo gratis no pudo recibir la imagen. Prueba más tarde.");
+  }
   const paths = (await uploaded.json()) as string[];
   const path = paths[0];
-  if (!path) throw new Error("El modelo gratis no aceptó la imagen.");
+  if (!path || path.includes("..")) {
+    throw new Error("El modelo gratis no aceptó la imagen.");
+  }
 
   const file = {
     path,
@@ -56,14 +66,20 @@ export async function animateStill(image: Blob, signal: AbortSignal, motion?: st
   const started = await fetch(`${SPACE}/gradio_api/call/generate_video`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    referrerPolicy: "no-referrer",
     body: JSON.stringify({ data }),
     signal,
   });
   if (!started.ok) throw new Error("Hay cola en el modelo gratis. Prueba en unos minutos.");
   const { event_id: eventId } = (await started.json()) as { event_id?: string };
-  if (!eventId) throw new Error("El modelo gratis no empezó el video.");
+  if (!eventId || !/^[A-Za-z0-9_-]{4,120}$/.test(eventId)) {
+    throw new Error("El modelo gratis no empezó el video.");
+  }
 
-  const stream = await fetch(`${SPACE}/gradio_api/call/generate_video/${eventId}`, { signal });
+  const stream = await fetch(`${SPACE}/gradio_api/call/generate_video/${eventId}`, {
+    referrerPolicy: "no-referrer",
+    signal,
+  });
   if (!stream.ok) throw new Error("Se cortó la espera del video.");
   const raw = await stream.text();
   const url = videoUrl(raw);
@@ -77,16 +93,20 @@ function videoUrl(raw: string): string | null {
     if (event === "error") throw new Error("El modelo gratis no pudo rodar este plano.");
     if (event !== "complete") continue;
     const found = findMp4(JSON.parse(data) as unknown);
-    if (found) return found.startsWith("http") ? found : `${SPACE}/gradio_api/file=${found}`;
+    if (found) return validateGradioMediaUrl(found, SPACE);
   }
   return null;
 }
 
 function findMp4(value: unknown): string | null {
-  if (typeof value === "string" && (value.includes(".mp4") || value.includes("/tmp/gradio"))) return value;
+  if (typeof value === "string" && (value.includes(".mp4") || value.includes("/tmp/gradio"))) {
+    return value;
+  }
   if (!value || typeof value !== "object") return null;
   if ("url" in value && typeof value.url === "string") return value.url;
-  if ("path" in value && typeof value.path === "string" && value.path.includes(".")) return value.path;
+  if ("path" in value && typeof value.path === "string" && value.path.includes(".")) {
+    return value.path;
+  }
   for (const item of Object.values(value)) {
     const found = findMp4(item);
     if (found) return found;

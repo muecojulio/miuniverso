@@ -1,7 +1,8 @@
+import { LruCache } from "@/lib/studio/db-indexed";
 import { placeOf } from "@/lib/studio/look";
 import type { Film, Place, Tone } from "@/lib/studio/types";
 
-export type Motion = "still" | "advance" | "power" | "faceoff";
+type Motion = "still" | "advance" | "power" | "faceoff";
 
 export type DirectedScene = {
   kind: "title" | "scene" | "end";
@@ -13,7 +14,14 @@ export type DirectedScene = {
   end: number;
 };
 
+const directMemo = new LruCache<string, DirectedScene[]>(32);
+
 export function direct(film: Film): DirectedScene[] {
+  const castSig = film.cast.map((c) => `${c.id}:${c.name}`).join(",");
+  const memoKey = `${film.id}|${film.duration}|${film.tone}|${film.title}|${castSig}|${film.story}`;
+  const cached = directMemo.get(memoKey);
+  if (cached) return cached;
+
   const count = film.duration === "corto" ? 3 : film.duration === "largo" ? 7 : 5;
   const sceneLen = film.duration === "corto" ? 3.1 : film.duration === "largo" ? 3.7 : 3.45;
   const lines = beats(film, count);
@@ -55,6 +63,7 @@ export function direct(film: Film): DirectedScene[] {
     start: t,
     end: t + endLen,
   });
+  directMemo.set(memoKey, scenes);
   return scenes;
 }
 
@@ -90,21 +99,23 @@ function beats(film: Film, count: number): string[] {
     const out: string[] = [];
     for (let i = 0; i < count; i++) {
       const idx = Math.round((i * (raw.length - 1)) / Math.max(1, count - 1));
-      out.push(raw[idx] ?? raw[0] ?? fillers[0]);
+      out.push(raw[idx] ?? raw[0] ?? fillers[0]!);
     }
     return out;
   }
   const out = [...raw];
   let i = 0;
   while (out.length < count) {
-    out.push(fillers[i % fillers.length] ?? fillers[0]);
+    out.push(fillers[i % fillers.length] ?? fillers[0]!);
     i += 1;
   }
   return out;
 }
 
 function focusFor(line: string, film: Film, index: number): string[] {
-  const mentioned = film.cast.filter((c) => c.name && line.toLowerCase().includes(c.name.toLowerCase()));
+  const mentioned = film.cast.filter(
+    (c) => c.name && line.toLowerCase().includes(c.name.toLowerCase()),
+  );
   if (/juntos|ambos|las dos|los dos|enfrent/i.test(line) && film.cast.length > 1) {
     return film.cast.slice(0, 3).map((c) => c.id);
   }
@@ -114,7 +125,9 @@ function focusFor(line: string, film: Film, index: number): string[] {
 }
 
 function motionFor(line: string, index: number, total: number, focusCount: number): Motion {
-  if (/choc|luch|poder|fuego|rayo|grito|estalla|aura/i.test(line)) return focusCount > 1 ? "faceoff" : "power";
+  if (/choc|luch|poder|fuego|rayo|grito|estalla|aura/i.test(line)) {
+    return focusCount > 1 ? "faceoff" : "power";
+  }
   if (focusCount > 1) return "faceoff";
   if (index === total - 1) return "still";
   if (index % 2 === 0) return "advance";

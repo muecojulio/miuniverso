@@ -13,7 +13,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: APP_NAME },
       { name: "description", content: "Crea una película con tu cara como héroe, villano o personaje de anime." },
-      { name: "theme-color", content: "#100e0c" },
+      { name: "theme-color", content: "#0d0b14" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
