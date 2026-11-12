@@ -1,5 +1,7 @@
+import { getStudioCache, setStudioCache } from "@/lib/studio/db-indexed";
 import { costumeLook, sanitizeForModel } from "@/lib/studio/inspired";
 import { loadImage } from "@/lib/studio/photo";
+import { bumpDailyAllowance, readDailyAllowance } from "@/lib/studio/security";
 import type { Film } from "@/lib/studio/types";
 
 const TONE: Record<Film["tone"], string> = {
@@ -10,9 +12,8 @@ const TONE: Record<Film["tone"], string> = {
 };
 
 export type FacePlace = { x: number; y: number; scale: number };
-export type FaceFocus = { x: number; y: number };
-
-export type FreeBeat = { prompt: string; actorId: string | null };
+type FaceFocus = { x: number; y: number };
+type FreeBeat = { prompt: string; actorId: string | null };
 
 export type FreePlate = {
   still: HTMLImageElement;
@@ -22,6 +23,8 @@ export type FreePlate = {
 };
 
 const DEFAULT_PLACE: FacePlace = { x: 0.5, y: 0.33, scale: 0.5 };
+const STILL_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const skinFocusMemo = new WeakMap<object, FacePlace | null>();
 
 export function sceneBeats(film: Film, background?: string): FreeBeat[] {
   const featured = film.cast.filter((actor) => actor.description.trim() || actor.photo).slice(0, 3);
@@ -29,7 +32,9 @@ export function sceneBeats(film: Film, background?: string): FreeBeat[] {
   const story = sanitizeForModel(background || film.story || film.title || "a quiet heroic dawn");
   const people = pool.length ? pool : [null];
   return people.map((actor) => {
-    const costume = actor ? costumeLook(actor.description, actor.role) : "long cape, structured collar, a simple sun-shaped chest plate, real fabric";
+    const costume = actor
+      ? costumeLook(actor.description, actor.role)
+      : "long cape, structured collar, a simple sun-shaped chest plate, real fabric";
     const prompt = [
       `Photoreal movie costume, chest-up portrait, vertical 9:16. ${costume}.`,
       "Sharp suit, armor, cape and collar, with cloth weight, stitching and metal. Shoulders and neckline fully in frame.",
@@ -44,15 +49,11 @@ export function sceneBeats(film: Film, background?: string): FreeBeat[] {
 }
 
 export function freeAllowance(): { key: string; used: number; max: number; ok: boolean } {
-  const max = 3;
-  const key = `miuniverso-gratis-${new Date().toISOString().slice(0, 10)}`;
-  const used = Number(localStorage.getItem(key) ?? "0") || 0;
-  return { key, used, max, ok: used < max };
+  return readDailyAllowance("gratis", 3);
 }
 
 export function bumpFreeAllowance(key: string) {
-  const used = Number(localStorage.getItem(key) ?? "0") || 0;
-  localStorage.setItem(key, String(used + 1));
+  bumpDailyAllowance(key);
 }
 
 function sleep(ms: number, signal?: AbortSignal) {
@@ -69,19 +70,34 @@ function sleep(ms: number, signal?: AbortSignal) {
   });
 }
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export async function fetchFreeStill(
   prompt: string,
   seed: number,
   onWait: (seconds: number) => void,
   signal?: AbortSignal,
 ): Promise<HTMLImageElement> {
+  const cacheKey = `still:${seed}:${prompt.slice(0, 220)}`;
+  const cachedDataUrl = await getStudioCache(cacheKey);
+  if (cachedDataUrl && cachedDataUrl.startsWith("data:image/")) {
+    return loadImage(cachedDataUrl);
+  }
+
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=540&height=960&nologo=true&seed=${seed}`;
-  let res = await fetch(url, { signal });
+  let res = await fetch(url, { referrerPolicy: "no-referrer", signal });
   if (res.status === 402) {
     const wait = Math.min(50, Math.max(1, Number(res.headers.get("retry-after") || "45")));
     onWait(wait);
     await sleep((wait + 1) * 1000, signal);
-    res = await fetch(url, { signal });
+    res = await fetch(url, { referrerPolicy: "no-referrer", signal });
   }
   if (!res.ok) {
     throw new Error(
@@ -91,7 +107,26 @@ export async function fetchFreeStill(
     );
   }
   const blob = await res.blob();
-  if (!blob.type.startsWith("image/")) throw new Error("La API gratis no devolvió una imagen.");
+  if (!blob.type.startsWith("image/") || blob.type === "image/svg+xml") {
+    throw new Error("La API gratis no devolvió una imagen válida.");
+  }
+
+  try {
+    if (blob.size > 0 && blob.size < 1_800_000) {
+      const dataUrl = await blobToDataUrl(blob);
+      if (dataUrl.startsWith("data:image/")) {
+        void setStudioCache({
+          key: cacheKey,
+          kind: "still",
+          value: dataUrl,
+          ttlMs: STILL_CACHE_TTL_MS,
+        });
+      }
+    }
+  } catch {
+    // Cache persistence is best-effort.
+  }
+
   const objectUrl = URL.createObjectURL(blob);
   try {
     return await loadImage(objectUrl);
@@ -112,7 +147,10 @@ export async function loadCastFaces(film: Film): Promise<{
       const img = await loadImage(actor.photo);
       photos.set(actor.id, img);
       const found = skinFocus(img);
-      focus.set(actor.id, found ? { x: found.x, y: found.y } : { x: 0.5, y: 0.36 + actor.frame * 0.18 });
+      focus.set(
+        actor.id,
+        found ? { x: found.x, y: found.y } : { x: 0.5, y: 0.36 + actor.frame * 0.18 },
+      );
     } catch {
       // A broken photo is skipped. The still stays as the generator drew it.
     }
@@ -120,7 +158,7 @@ export async function loadCastFaces(film: Film): Promise<{
   return { photos, focus };
 }
 
-export function placed(base: FacePlace, nudge: FacePlace): FacePlace {
+function placed(base: FacePlace, nudge: FacePlace): FacePlace {
   return {
     x: clamp(base.x + nudge.x, 0.18, 0.82),
     y: clamp(base.y + nudge.y, 0.14, 0.72),
@@ -132,8 +170,11 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function skinFocus(img: CanvasImageSource & { width: number; height: number }): FacePlace | null {
+function skinFocus(img: CanvasImageSource & { width: number; height: number }): FacePlace | null {
   if (!img.width || !img.height) return null;
+  if (skinFocusMemo.has(img)) {
+    return skinFocusMemo.get(img) ?? null;
+  }
   const w = 90;
   const h = Math.max(1, Math.round((w * img.height) / img.width));
   const canvas = document.createElement("canvas");
@@ -145,9 +186,9 @@ export function skinFocus(img: CanvasImageSource & { width: number; height: numb
   const data = ctx.getImageData(0, 0, w, h).data;
   const skin = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    const r = data[i * 4];
-    const g = data[i * 4 + 1];
-    const b = data[i * 4 + 2];
+    const r = data[i * 4]!;
+    const g = data[i * 4 + 1]!;
+    const b = data[i * 4 + 2]!;
     const y = 0.299 * r + 0.587 * g + 0.114 * b;
     const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
     const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
@@ -162,7 +203,7 @@ export function skinFocus(img: CanvasImageSource & { width: number; height: numb
     for (let x0 = 0; x0 + ww < w; x0 += 2) {
       let count = 0;
       for (let yy = y0; yy < y0 + hh; yy++) {
-        for (let xx = x0; xx < x0 + ww; xx++) count += skin[yy * w + xx];
+        for (let xx = x0; xx < x0 + ww; xx++) count += skin[yy * w + xx]!;
       }
       if (count > best) {
         best = count;
@@ -171,8 +212,12 @@ export function skinFocus(img: CanvasImageSource & { width: number; height: numb
       }
     }
   }
-  if (best < ww * hh * 0.28) return null;
-  return { x: (bx + ww / 2) / w, y: (by + hh / 2) / h, scale: 0.5 };
+  const result =
+    best < ww * hh * 0.28
+      ? null
+      : { x: (bx + ww / 2) / w, y: (by + hh / 2) / h, scale: 0.5 };
+  skinFocusMemo.set(img, result);
+  return result;
 }
 
 function sampleGain(img: HTMLImageElement, place: FacePlace) {
@@ -183,11 +228,23 @@ function sampleGain(img: HTMLImageElement, place: FacePlace) {
   if (!ctx) return 1;
   const sw = img.width * 0.08;
   const sh = img.height * 0.08;
-  ctx.drawImage(img, place.x * img.width - sw / 2, place.y * img.height - sh / 2, sw, sh, 0, 0, 8, 8);
+  ctx.drawImage(
+    img,
+    place.x * img.width - sw / 2,
+    place.y * img.height - sh / 2,
+    sw,
+    sh,
+    0,
+    0,
+    8,
+    8,
+  );
   const data = ctx.getImageData(0, 0, 8, 8).data;
   let y = 0;
   const n = data.length / 4;
-  for (let i = 0; i < data.length; i += 4) y += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  for (let i = 0; i < data.length; i += 4) {
+    y += 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!;
+  }
   return clamp(y / n / 150, 0.92, 1.08);
 }
 
@@ -198,7 +255,12 @@ export function makePlate(
   focus: FaceFocus,
 ): FreePlate {
   const base = skinFocus(still) ?? { ...DEFAULT_PLACE };
-  return { still, actorId, base, face: photo ? bakeFace(photo, focus, sampleGain(still, base)) : null };
+  return {
+    still,
+    actorId,
+    base,
+    face: photo ? bakeFace(photo, focus, sampleGain(still, base)) : null,
+  };
 }
 
 function bakeFace(photo: HTMLImageElement, focus: FaceFocus, gain: number) {
@@ -214,9 +276,9 @@ function bakeFace(photo: HTMLImageElement, focus: FaceFocus, gain: number) {
   if (gain !== 1) {
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
     for (let i = 0; i < pixels.data.length; i += 4) {
-      pixels.data[i] = Math.min(255, pixels.data[i] * gain);
-      pixels.data[i + 1] = Math.min(255, pixels.data[i + 1] * gain);
-      pixels.data[i + 2] = Math.min(255, pixels.data[i + 2] * gain);
+      pixels.data[i] = Math.min(255, pixels.data[i]! * gain);
+      pixels.data[i + 1] = Math.min(255, pixels.data[i + 1]! * gain);
+      pixels.data[i + 2] = Math.min(255, pixels.data[i + 2]! * gain);
     }
     ctx.putImageData(pixels, 0, 0);
   }
@@ -247,9 +309,30 @@ function headPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: num
   ctx.beginPath();
   ctx.moveTo(cx - rx * 0.32, cy + ry * 1.28);
   ctx.lineTo(cx - rx * 0.4, cy + ry * 0.62);
-  ctx.bezierCurveTo(cx - rx * 0.98, cy + ry * 0.2, cx - rx * 1.05, cy - ry * 0.55, cx - rx * 0.52, cy - ry * 1.02);
-  ctx.bezierCurveTo(cx - rx * 0.16, cy - ry * 1.28, cx + rx * 0.16, cy - ry * 1.28, cx + rx * 0.52, cy - ry * 1.02);
-  ctx.bezierCurveTo(cx + rx * 1.05, cy - ry * 0.55, cx + rx * 0.98, cy + ry * 0.2, cx + rx * 0.4, cy + ry * 0.62);
+  ctx.bezierCurveTo(
+    cx - rx * 0.98,
+    cy + ry * 0.2,
+    cx - rx * 1.05,
+    cy - ry * 0.55,
+    cx - rx * 0.52,
+    cy - ry * 1.02,
+  );
+  ctx.bezierCurveTo(
+    cx - rx * 0.16,
+    cy - ry * 1.28,
+    cx + rx * 0.16,
+    cy - ry * 1.28,
+    cx + rx * 0.52,
+    cy - ry * 1.02,
+  );
+  ctx.bezierCurveTo(
+    cx + rx * 1.05,
+    cy - ry * 0.55,
+    cx + rx * 0.98,
+    cy + ry * 0.2,
+    cx + rx * 0.4,
+    cy + ry * 0.62,
+  );
   ctx.lineTo(cx + rx * 0.32, cy + ry * 1.28);
   ctx.closePath();
 }
@@ -331,11 +414,11 @@ export function paintFreeTake(
   const slot = duration / plates.length;
   const index = Math.min(plates.length - 1, Math.floor(time / slot));
   const local = (time - index * slot) / Math.max(0.001, slot);
-  drawPlate(ctx, plates[index], nudge, 1 + local * 0.06);
+  drawPlate(ctx, plates[index]!, nudge, 1 + local * 0.06);
   const fade = 0.22;
   if (index + 1 < plates.length && local > 1 - fade) {
     ctx.globalAlpha = (local - (1 - fade)) / fade;
-    drawPlate(ctx, plates[index + 1], nudge, 1);
+    drawPlate(ctx, plates[index + 1]!, nudge, 1);
     ctx.globalAlpha = 1;
   }
   if (grain) {
@@ -352,5 +435,3 @@ export function paintFreeTake(
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, cw, ch);
 }
-
-export { DEFAULT_PLACE };

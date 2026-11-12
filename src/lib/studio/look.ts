@@ -1,3 +1,4 @@
+import { LruCache } from "@/lib/studio/db-indexed";
 import { expandDescription } from "@/lib/studio/inspired";
 import type { Actor, Place, Role } from "@/lib/studio/types";
 
@@ -14,7 +15,17 @@ export type Power =
   | "cosmos"
   | "fuerza";
 
-export type Emblem = "sol" | "luna" | "red" | "ala" | "ojo" | "estrella" | "hoja" | "rayo" | "corona" | "circulo";
+export type Emblem =
+  | "sol"
+  | "luna"
+  | "red"
+  | "ala"
+  | "ojo"
+  | "estrella"
+  | "hoja"
+  | "rayo"
+  | "corona"
+  | "circulo";
 
 export type Look = {
   id: string;
@@ -31,30 +42,36 @@ export type Look = {
   emblem: Emblem;
 };
 
-const DYES = ["#8c3a32", "#1e3a5f", "#1f6a45", "#6e2430", "#3f4a38", "#8a5a2b"];
+const DYES = ["#9c3428", "#1d4ed8", "#15803d", "#7e22ce", "#be123c", "#b45309"];
 
 const COLOR_WORDS: [RegExp, string][] = [
-  [/carmes[ií]|rojo|escarlata|bermell[oó]n/i, "#9c2b2b"],
-  [/azul|marino|[ií]ndigo/i, "#1e3a5f"],
-  [/oro|dorado|bronce/i, "#c6a15b"],
-  [/negro|[eé]bano/i, "#1a1a1a"],
-  [/blanco|marfil|plata|plateado/i, "#e4ded2"],
-  [/verde|esmeralda/i, "#1f6a45"],
-  [/naranja|[aá]mbar/i, "#d06a2b"],
-  [/rosa|magenta/i, "#c45b78"],
-  [/violeta|p[uú]rpura|morado/i, "#5c4d86"],
-  [/cian|turquesa|hielo/i, "#7eb8c9"],
+  [/carmes[ií]|rojo|escarlata|bermell[oó]n/i, "#b82e2e"],
+  [/azul|marino|[ií]ndigo/i, "#244c82"],
+  [/oro|dorado|bronce/i, "#d8ac54"],
+  [/negro|[eé]bano/i, "#1c1c20"],
+  [/blanco|marfil|plata|plateado/i, "#ece6da"],
+  [/verde|esmeralda/i, "#227a50"],
+  [/naranja|[aá]mbar/i, "#db6d28"],
+  [/rosa|magenta/i, "#cf5278"],
+  [/violeta|p[uú]rpura|morado/i, "#6a4ea8"],
+  [/cian|turquesa|hielo/i, "#58b8cc"],
 ];
 
+const lookMemo = new LruCache<string, Look>(64);
+
 export function toLook(actor: Actor): Look {
+  const memoKey = `${actor.id}|${actor.role}|${actor.name}|${actor.description}`;
+  const cached = lookMemo.get(memoKey);
+  if (cached) return cached;
+
   const text = expandDescription(actor.description, actor.role);
   const found = COLOR_WORDS.filter(([re]) => re.test(text)).map(([, hex]) => hex);
-  const dye = DYES[hash(actor.name + text) % DYES.length] ?? DYES[0];
-  let primary = found[0] ?? dye;
+  const dye = DYES[hash(actor.name + text) % DYES.length] ?? DYES[0]!;
+  const primary = found[0] ?? dye;
   let secondary = found[1] ?? shade(primary, actor.role === "villano" ? -20 : 36);
-  if (primary.toLowerCase() === "#1a1a1a") secondary = found[1] ?? "#8a3a3a";
-  const metal = /plata|plateado|hielo/i.test(text) ? "#d5d0c6" : "#e0b15a";
-  return {
+  if (primary.toLowerCase() === "#1c1c20") secondary = found[1] ?? "#9e3442";
+  const metal = /plata|plateado|hielo/i.test(text) ? "#dbd6cc" : "#f0be5b";
+  const computed: Look = {
     id: actor.id,
     name: actor.name.trim() || "Sin nombre",
     role: actor.role,
@@ -68,6 +85,8 @@ export function toLook(actor: Actor): Look {
     mask: /m[aá]scara|antifaz|casco|venda/i.test(text),
     emblem: emblemOf(text, actor.role),
   };
+  lookMemo.set(memoKey, computed);
+  return computed;
 }
 
 export function shade(hex: string, amt: number): string {
