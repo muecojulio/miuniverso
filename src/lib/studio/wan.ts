@@ -1,3 +1,5 @@
+import { gradioEvents } from "./gradio-events";
+
 const SPACE = "https://cbensimon-wan2-2-fp8da-aoti-preview2.hf.space";
 
 const NEGATIVE =
@@ -70,10 +72,7 @@ export async function animateStill(image: Blob, signal: AbortSignal, motion?: st
 }
 
 function videoUrl(raw: string): string | null {
-  const blocks = raw.split("\n\n").filter(Boolean);
-  for (const block of blocks.reverse()) {
-    const event = block.match(/^event:\s*(\S+)/m)?.[1];
-    const data = block.match(/^data:\s*(.+)$/m)?.[1];
+  for (const { event, data } of gradioEvents(raw).reverse()) {
     if (!event || !data) continue;
     if (event === "error") throw new Error("El modelo gratis no pudo rodar este plano.");
     if (event !== "complete") continue;

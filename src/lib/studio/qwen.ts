@@ -1,3 +1,5 @@
+import { gradioEvents } from "./gradio-events";
+
 const SPACE = "https://prithivmlmods-qwen-image-edit-2511-loras-fast.hf.space";
 
 export function qwenAllowance(): { key: string; used: number; max: number; ok: boolean } {
@@ -35,10 +37,7 @@ export async function dressPhoto(
 }
 
 function readPortrait(raw: string): string {
-  const blocks = raw.split("\n\n").filter(Boolean);
-  for (const block of blocks.reverse()) {
-    const event = block.match(/^event:\s*(\S+)/m)?.[1];
-    const data = block.match(/^data:\s*(.+)$/m)?.[1];
+  for (const { event, data } of gradioEvents(raw).reverse()) {
     if (!event || !data || data === "null") continue;
     if (event === "error") {
       const info = JSON.parse(data) as { error?: string };

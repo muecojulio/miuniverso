@@ -23,10 +23,10 @@ export type FreePlate = {
 
 const DEFAULT_PLACE: FacePlace = { x: 0.5, y: 0.33, scale: 0.5 };
 
-export function sceneBeats(film: Film): FreeBeat[] {
+export function sceneBeats(film: Film, background?: string): FreeBeat[] {
   const featured = film.cast.filter((actor) => actor.description.trim() || actor.photo).slice(0, 3);
   const pool = featured.length ? featured : film.cast.slice(0, 1);
-  const story = sanitizeForModel(film.story || film.title || "a quiet heroic dawn");
+  const story = sanitizeForModel(background || film.story || film.title || "a quiet heroic dawn");
   const people = pool.length ? pool : [null];
   return people.map((actor) => {
     const costume = actor ? costumeLook(actor.description, actor.role) : "long cape, structured collar, a simple sun-shaped chest plate, real fabric";

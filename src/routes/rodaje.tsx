@@ -24,6 +24,7 @@ import {
 import { animateStill, bumpWan, wanAllowance } from "@/lib/studio/wan";
 import { bumpQwen, dressPhoto, qwenAllowance } from "@/lib/studio/qwen";
 import { useStudio } from "@/lib/studio/store";
+import { translateBackground } from "@/lib/studio/translate";
 import { DURATION_LABEL, type Duration, type Film } from "@/lib/studio/types";
 
 export const Route = createFileRoute("/rodaje")({ component: Rodaje });
@@ -215,7 +216,8 @@ function Rodaje() {
         setFromPhoto(true);
       } else {
         const faces = await loadCastFaces(film);
-        const beats = sceneBeats(film);
+        const background = await translateBackground(film.story || film.title, controller.signal);
+        const beats = sceneBeats(film, background);
         const seedBase = Date.now() % 100000;
         for (let i = 0; i < beats.length; i++) {
           setPhase(`Plano ${i + 1} de ${beats.length}…`);
@@ -292,7 +294,8 @@ function Rodaje() {
     setPlates([]);
     try {
       const faces = await loadCastFaces(film);
-      const beats = sceneBeats(film);
+      const background = await translateBackground(film.story || film.title, controller.signal);
+      const beats = sceneBeats(film, background);
       const seedBase = Date.now() % 100000;
       const next: FreePlate[] = [];
       for (let i = 0; i < beats.length; i++) {
@@ -396,7 +399,7 @@ function Rodaje() {
           checked={consent}
           onChange={setConsent}
           label="Acepto enviar el texto"
-          hint="Nunca la foto. No pongas datos privados en la historia. Máximo 3 videos al día."
+          hint="El texto se envía a MyMemory para traducirlo y al generador de imágenes; nunca la foto. No incluyas datos privados. Máximo 3 videos al día."
         />
         <Button onClick={() => void shoot()} disabled={Boolean(phase)}>
           {phase || "Crear el plano"}
